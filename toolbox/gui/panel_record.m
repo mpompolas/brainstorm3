@@ -168,7 +168,7 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
         gui_component('MenuItem', jMenu, [], 'Group by time', IconLoader.ICON_FUSION, [], @(h,ev)CallProcessOnRaw('process_evt_grouptime'));
         gui_component('MenuItem', jMenu, [], 'Add time offset', IconLoader.ICON_ARROW_RIGHT, [], @(h,ev)CallProcessOnRaw('process_evt_timeoffset'));
         jMenu.addSeparator();
-        gui_component('MenuItem', jMenu, [], 'Edit keyboard shortcuts', IconLoader.ICON_EVT_OCCUR_ADD, [], @(h,ev)gui_show('panel_raw_shortcuts', 'JavaWindow', 'Event keyboard shortcuts', [], 1, 0, 0));
+        gui_component('MenuItem', jMenu, [], 'Edit keyboard shortcuts', IconLoader.ICON_KEYBOARD, [], @(h,ev)gui_show('panel_raw_shortcuts', 'JavaWindow', 'Event keyboard shortcuts', [], 1, 0, 0));
         jMenu.addSeparator();
         jItem = gui_component('MenuItem', jMenu, [], 'Add / delete event', IconLoader.ICON_EVT_OCCUR_ADD, [], @(h,ev)bst_call(@ToggleEvent));
         jItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_E, 0));
@@ -1133,7 +1133,7 @@ function ReloadRecordings(isForced)
     % Reload recordings matrix from raw file
     bst_memory('LoadRecordingsMatrix', iDS);
     % Replot all figures
-    bst_figures('ReloadFigures');
+    bst_figures('ReloadFigures', [], 1, 1);
     % Flushes the display updates
     drawnow;
     % Close progress bar
@@ -1509,11 +1509,20 @@ function JumpToEvent(iEvent, iOccur)
     % Get event time
     evtEpoch = events(iEvent).epochs(iOccur);
     evtTime  = mean(events(iEvent).times(:,iOccur),1);
+    % Check if event is a "full page" shortcut
+    RawViewerOptions = bst_get('RawViewerOptions');
+    iShortcut = find(strcmpi(RawViewerOptions.Shortcuts(:,2), events(iEvent).label));
+    isFullPage = ~isempty(iShortcut) && strcmpi(RawViewerOptions.Shortcuts(iShortcut,3), 'page') && (size(events(iEvent).times,1) == 2);
     % If event is outside of the current user time window
     UserTime = GlobalData.UserTimeWindow.Time;
     if (evtTime < UserTime(1)) || (evtTime > UserTime(2))
+        % Full page: start at the beginning of the event
+        if isFullPage
+            startTime = events(iEvent).times(1,iOccur);
         % Try to position the selected event at 30% of the time window
-        startTime = evtTime - .3 * (UserTime(2) - UserTime(1));
+        else
+            startTime = evtTime - .3 * (UserTime(2) - UserTime(1));
+        end
         % Get raw viewer window
         SetStartTime(startTime, evtEpoch);
     end
@@ -2104,8 +2113,8 @@ end
 
 
 %% ===== EVENT OCCUR: ADD =====
-% USAGE:  EventOccurAdd(iEvent=[selected], channelNames=[])
-function EventOccurAdd(iEvent, channelNames)
+% USAGE: [sEvent, iOccur] = EventOccurAdd(iEvent=[selected], channelNames=[])
+function [sEvent, iOccur] = EventOccurAdd(iEvent, channelNames)
     global GlobalData;
     % Parse inputs
     if (nargin < 2) || isempty(channelNames) || ~iscell(channelNames)
@@ -2328,10 +2337,19 @@ end
 
 
 %% ===== TOGGLE EVENT AT CURRENT TIME =====
-% USAGE:  ToggleEvent(eventName=[ask], channelNames=[])
+% USAGE:  ToggleEvent(eventName=[ask], channelNames=[], isFullPage=0)
 %         ToggleEvent()
-function ToggleEvent(eventName, channelNames)
+%
+% INPUTS:
+%    - eventName    : Name of the event to add/delete
+%    - channelNames : Cell-array of strings, names of the channels associated with the new event
+%    - isFullPage   : If 0, regular behavior, if an event exists it is removed, otherwise an event is created
+%                     If 1, sleep-scoring mode, existing event is not deleted but similar events in other groups are removed
+function ToggleEvent(eventName, channelNames, isFullPage)
     % Parse inputs
+    if (nargin < 3) || isempty(isFullPage)
+        isFullPage = 0;
+    end
     if (nargin < 2) || isempty(channelNames)
         channelNames = [];
     end
@@ -2351,12 +2369,39 @@ function ToggleEvent(eventName, channelNames)
         % Get again selected event
         [iEvent, iOccur] = GetCurrentEvent();
     end
-    % There is an event at selected time: Delete it
-    if ~isempty(iOccur)
-        EventOccurDel(iEvent, iOccur);
-    % Else: add an event
+    
+    % In full page mode: attribute the page to only one event type
+    if isFullPage
+        % There is no event at selected time: Add an event
+        if isempty(iOccur)
+            [sEvent, iOccur] = EventOccurAdd(iEvent, channelNames);
+        else
+            sEvent = GetEvents(iEvent);
+        end
+        % If this is really an extended event: Look for other events at the same time
+        if (size(sEvent.times,1) == 2)
+            sAllEvents = GetEvents();
+            for i = setdiff(1:length(sAllEvents), iEvent)
+                if ~isempty(sAllEvents(i).times) && (size(sAllEvents(i).times,1) == 2)
+                    % Find overlapping event
+                    iDel = find((abs(sAllEvents(i).times(1,:) - sEvent.times(1,iOccur)) < 1e-3) & ...
+                                (abs(sAllEvents(i).times(2,:) - sEvent.times(2,iOccur)) < 1e-3));
+                    % Remove event
+                    if ~isempty(iDel)
+                        EventOccurDel(i, iDel);
+                    end
+                end
+            end
+        end
+    % In regular mode: toggle on/off
     else
-        EventOccurAdd(iEvent, channelNames);
+        % There is no event at selected time: Add an event
+        if isempty(iOccur)
+            [sEventNew, iOccurNew] = EventOccurAdd(iEvent, channelNames);
+        % There is an event at selected time: Delete it
+        elseif ~isempty(iOccur)
+            EventOccurDel(iEvent, iOccur);
+        end
     end
 end
 

@@ -425,7 +425,7 @@ function FigureMouseDownCallback(hFig, ev)
                 end
             end
             return
-        case {'EventDots', 'EventDotsExt', 'EventLabels', 'EventNotes', 'EventLines', 'EventPatches', 'EventDotsExtChannel', 'EventDotsChannel', 'EventLinesChannel', 'EventPatchesChannel'}
+        case {'EventBarDots', 'EventDots', 'EventDotsExt', 'EventLabels', 'EventNotes', 'EventLines', 'EventPatches', 'EventDotsExtChannel', 'EventDotsChannel', 'EventLinesChannel', 'EventPatchesChannel'}
             % Force updating the figure selection before the mouse release, because if no the events are not the ones we need
             bst_figures('SetCurrentFigure', hFig, '2D');
             % Get events
@@ -1482,10 +1482,11 @@ function FigureKeyPressedCallback(hFig, ev)
                         % Update channels events
                         hEventObj = [...
                             findobj(hAxes, '-depth', 1, 'Tag', 'EventDotsChannel'); ...
+                            findobj(hAxes, '-depth', 1, 'Tag', 'EventDotsExtChannel'); ...
                             findobj(hAxes, '-depth', 1, 'Tag', 'EventLinesChannel'); ...
                             findobj(hAxes, '-depth', 1, 'Tag', 'EventPatchesChannel')];
                         if ~isempty(hEventObj)
-                            bst_figures('ReloadFigures', hFig, 0);
+                            bst_figures('ReloadFigures', hFig);
                         end
                     % COPY VIEW OPTIONS
                     case '='
@@ -1504,11 +1505,62 @@ function FigureKeyPressedCallback(hFig, ev)
                             % If the key that was pressed is in the shortcuts list
                             iShortcut = find(strcmpi(RawViewerOptions.Shortcuts(:,1), keyEvent.Character));
                             % If shortcut was found: call the corresponding function
+                            isFullPage = 0;
                             if ~isempty(iShortcut) && ~isempty(RawViewerOptions.Shortcuts{iShortcut,2})
+                                % Set selected time for extended events
+                                switch (RawViewerOptions.Shortcuts{iShortcut,3})
+                                    case 'simple'
+                                        selTime = [];
+                                    case 'page'
+                                        selTime = GlobalData.UserTimeWindow.Time;
+                                        isFullPage = 1;
+                                    case 'extended'
+                                        % If there is already a time window selected: keep it
+                                        GraphSelection = getappdata(hFig, 'GraphSelection');
+                                        if ~isempty(GraphSelection) && ~isinf(GraphSelection(2))
+                                            selTime = [];
+                                        % Otherwise, select a time window around the time cursor
+                                        else
+                                            selTime = GlobalData.UserTimeWindow.CurrentTime + RawViewerOptions.Shortcuts{iShortcut,4};
+                                        end
+                                end
+                                if ~isempty(selTime)
+                                    SetTimeSelectionLinked(hFig, selTime);
+                                end
+                                % Toggle event
                                 if isControl && ~isempty(SelectedRows)
-                                    panel_record('ToggleEvent', RawViewerOptions.Shortcuts{iShortcut,2}, SelectedRows);
+                                    panel_record('ToggleEvent', RawViewerOptions.Shortcuts{iShortcut,2}, SelectedRows, isFullPage);
                                 else
-                                    panel_record('ToggleEvent', RawViewerOptions.Shortcuts{iShortcut,2});
+                                    panel_record('ToggleEvent', RawViewerOptions.Shortcuts{iShortcut,2}, [], isFullPage);
+                                end
+                                % Reset time selection
+                                if ~isempty(selTime)
+                                    SetTimeSelectionLinked(hFig, []);
+                                end
+                                % For full page marking: move to the next non-marked page automatically
+                                if isRaw && strcmpi(RawViewerOptions.Shortcuts{iShortcut,3}, 'page')
+                                    % Get all the shortcuts of the type "page"
+                                    pageEventNames = RawViewerOptions.Shortcuts(strcmpi(RawViewerOptions.Shortcuts(:,3), 'page'), 2);
+                                    pageEnd = GlobalData.UserTimeWindow.Time(end);
+                                    iLastEvent = [];
+                                    iLastOccur = [];
+                                    % Look for last page event marked (after the current one)
+                                    for i = 1:length(pageEventNames)
+                                        [sEvent, iEvent] = panel_record('GetEvents', pageEventNames{i});
+                                        if ~isempty(sEvent) && ~isempty(sEvent.times) && (pageEnd < sEvent.times(2,end))
+                                            pageEnd = sEvent.times(2,end);
+                                            iLastEvent = iEvent;
+                                            iLastOccur = size(sEvent.times, 2);
+                                        end
+                                    end
+                                    % If nothing marked further and not at the end of the file: jump to next page
+                                    if isempty(iLastEvent) || (pageEnd + diff(GlobalData.UserTimeWindow.Time) >= GlobalData.FullTimeWindow.Epochs(GlobalData.FullTimeWindow.CurrentEpoch).Time(end))
+                                        keyEvent.Key = 'nooverlap+';
+                                        panel_record('RawKeyCallback', keyEvent);
+                                    % Otherwise, jump back to the last marked page
+                                    else
+                                        panel_record('JumpToEvent', iLastEvent, iLastOccur);
+                                    end
                                 end
                             end
                         end
@@ -2265,7 +2317,6 @@ function DisplayFigurePopup(hFig, menuTitle, curTime, selChan)
     jMenuFigure = gui_component('Menu', jPopup, [], 'Figure', IconLoader.ICON_LAYOUT_SHOWALL);
         % === FIGURE CONFIG ===
         % Change background color
-        jMenuFigure.addSeparator();
         gui_component('MenuItem', jMenuFigure, [], 'Change background color', IconLoader.ICON_COLOR_SELECTION, [], @(h,ev)bst_figures('SetBackgroundColor', hFig));
         
         % === MATLAB CONTROLS ===
@@ -2397,9 +2448,9 @@ function DisplayConfigMenu(hFig, jParent)
                 jItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, KeyEvent.CTRL_MASK)); 
             end
         end
-        % Uniform figure scales
+        % Uniform amplitude scales
         if ~isRaw && (length(hFigAll) > 1)
-            jItem = gui_component('CheckBoxMenuItem', jMenu, [], 'Uniform figure scales', [], [], @(h,ev)panel_record('UniformTimeSeries_Callback',h,ev));
+            jItem = gui_component('CheckBoxMenuItem', jMenu, [], 'Uniform amplitude scales', [], [], @(h,ev)panel_record('UniformTimeSeries_Callback',h,ev));
             jItem.setSelected(bst_get('UniformizeTimeSeriesScales'));
         end
         % Standardize data
@@ -4298,7 +4349,7 @@ function PlotEventsDots_TimeBar(hFig)
             'MarkerEdgeColor', color, ...
             'MarkerSize',      6, ...
             'Marker',          Marker, ...
-            'Tag',             'EventLine', ...
+            'Tag',             'EventBarDots', ...
             'UserData',        iEvt, ...
             'Parent',          hRawTimeBar);
     end
