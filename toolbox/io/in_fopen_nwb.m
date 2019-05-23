@@ -185,7 +185,7 @@ ChannelMat.Channel = repmat(db_template('channeldesc'), [1, nChannels + nAdditio
 amp_channel_IDs = nwb2.general_extracellular_ephys_electrodes.id.data.load;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-group_name      = nwb2.general_extracellular_ephys_electrodes.vectordata.get('group_name').data;
+group_name      = nwb2.general_extracellular_ephys_electrodes.vectordata.get('group_name').data.load;
 
 % Get coordinates and set to 0 if they are not available
 x = nwb2.general_extracellular_ephys_electrodes.vectordata.get('x').data.load'./1000; % NWB saves in m ???
@@ -282,6 +282,7 @@ function downloadNWB()
     url = 'https://github.com/NeurodataWithoutBorders/matnwb/archive/master.zip';
     % If folders exists: delete
     if isdir(NWBDir)
+        rmpath(genpath(NWBDir)); % This gave an error if the NWBDir was in the path. Remove from path before deleting
         file_delete(NWBDir, 1, 3);
     end
     if isdir(NWBTmpDir)
