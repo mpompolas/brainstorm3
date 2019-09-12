@@ -713,7 +713,7 @@ function OutputFile = ProcessFilter(sProcess, sInput)
             else
                 sInput.A = matValues(iRow, iCol, :);
                 if ~isempty(stdValues)
-                    sInput.Std = stdValues(iRow, iCol, :);
+                    sInput.Std = stdValues(iRow, iCol, :, :);
                 else
                     sInput.Std = [];
                 end
@@ -743,7 +743,7 @@ function OutputFile = ProcessFilter(sProcess, sInput)
                 % Standard error
                 if ~isempty(sInput.Std)
                     tmp2 = sInput.Std;
-                    sInput.Std = sInput.Std(iRowProcess,:,:);
+                    sInput.Std = sInput.Std(iRowProcess,:,:,:);
                 end
                 % Process file
                 sInput = sProcess.Function('Run', sProcess, sInput);
@@ -761,7 +761,7 @@ function OutputFile = ProcessFilter(sProcess, sInput)
                     end
                     % Standard error
                     if ~isempty(sInput.Std)
-                        tmp2(iRowProcess,:,:) = sInput.Std;
+                        tmp2(iRowProcess,:,:,:) = sInput.Std;
                         sInput.Std = tmp2;
                     end
                 end
@@ -881,7 +881,7 @@ function OutputFile = ProcessFilter(sProcess, sInput)
             else
                 OutputMat(iRow,iOutTime,:) = sInput.A;
                 if ~isempty(stdValues) && ~isempty(sInput.Std)
-                    OutputStd(iRow,iOutTime,:) = sInput.Std;
+                    OutputStd(iRow,iOutTime,:,:) = sInput.Std;
                 else
                     OutputStd = [];
                 end
@@ -936,7 +936,7 @@ function OutputFile = ProcessFilter(sProcess, sInput)
     if isfield(sProcess.options, 'Comment') && isfield(sProcess.options.Comment, 'Value') && ~isempty(sProcess.options.Comment.Value)
         sMat.Comment = sProcess.options.Comment.Value;
     % Modify comment based on modifications in function Run
-    elseif isfield(sInput, 'Comment') && ~isempty(sInput.Comment) && ~isequal(sMat.Comment, sInput.Comment)
+    elseif ~isRaw && isfield(sInput, 'Comment') && ~isempty(sInput.Comment) && ~isequal(sMat.Comment, sInput.Comment)
         sMat.Comment = sInput.Comment;
     % Add file tag (defined in process Run function)
     elseif isfield(sInput, 'CommentTag') && ~isempty(sInput.CommentTag)

@@ -1098,7 +1098,7 @@ switch contextName
             fileTag = ['_' lower(SurfaceType)];
             iTargetList = find(cellfun(@(c)~isempty(strfind(c, fileTag)), {sSubject.Surface.FileName}));
             % Put the default cortex on top of the list
-            iDefaults = intersect([sSubject.iCortex, sSubject.iScalp, sSubject.iInnerSkull, sSubject.iOuterSkull], iTargetList);
+            iDefaults = intersect([sSubject.iCortex, sSubject.iScalp, sSubject.iInnerSkull, sSubject.iOuterSkull, sSubject.iFibers, sSubject.iFEM], iTargetList);
             if ~isempty(iDefaults)
                 iTargetList = [iDefaults, setdiff(iTargetList, iDefaults)];
             end
@@ -2051,7 +2051,7 @@ switch contextName
                     sItem = sStudy.Image(iItem);
                 end
             % ===== ANATOMY =====
-            case {'cortex','scalp','innerskull','outerskull','tess','fibers'}
+            case {'cortex','scalp','innerskull','outerskull','tess','fibers','fem'}
                 [sStudy, iStudy, iItem] = bst_get('SurfaceFile', FileName);
                 if (nargout >= 5) && ~isempty(sStudy)
                     sItem = sStudy.Surface(iItem);
@@ -2586,13 +2586,35 @@ switch contextName
         
     case 'SpmTpmAtlas'
         % Get template file
-        argout1 = bst_fullfile(bst_get('BrainstormUserDir'), 'defaults', 'spm', 'TPM.nii');
+        tpmUser = bst_fullfile(bst_get('BrainstormUserDir'), 'defaults', 'spm', 'TPM.nii');
+        if file_exist(tpmUser)
+            argout1 = tpmUser;
+            disp(['SPM12 template found: ' tpmUser]);
+            return;
+        end
         % If it does not exist: check in brainstorm3 folder
-        if ~file_exist(argout1)
-            distribTpm = bst_fullfile(bst_get('BrainstormHomeDir'), 'defaults', 'spm', 'TPM.nii');
-            if file_exist(distribTpm)
-                argout1 = distribTpm;
+        tpmDistrib = bst_fullfile(bst_get('BrainstormHomeDir'), 'defaults', 'spm', 'TPM.nii');
+        if file_exist(tpmDistrib)
+            argout1 = tpmDistrib;
+            disp(['SPM12 template found: ' tpmDistrib]);
+            return;
+        end
+        % If it does not exist: check in spm12 folder
+        spmDir = bst_get('SpmDir');
+        if ~isempty(spmDir)
+            tpmSpm = bst_fullfile(spmDir, 'tpm', 'TPM.nii');
+            if file_exist(tpmSpm)
+                argout1 = tpmSpm;
+                disp(['SPM12 template found: ' tpmSpm]);
+                return;
             end
+        end
+        % Not found...
+        disp('SPM12 template not found in any of the following folders:');
+        disp([' - ' tpmUser]);
+        disp([' - ' tpmDistrib]);
+        if ~isempty(spmDir)
+            disp([' - ' tpmSpm]);
         end
         
     case 'ElectrodeConfig'
@@ -2691,7 +2713,7 @@ switch contextName
             'EventsIn',    '', ...
             'EventsOut',   '', ...
             'MriIn',       '', ...
-            'MriOut',      '', ...
+            'MriOut',      'Nifti1', ...
             'NoiseCovIn',  '', ...
             'NoiseCovOut', '', ...
             'ResultsIn',   '', ...
@@ -3306,7 +3328,7 @@ switch contextName
                 argout1 = {...
                     {'.trg'},          'ANT EEProbe (*.trg)',           'ANT'; ...
                     {'.evt'},          'BESA (*.evt)',                  'BESA'; ...
-                    {'.tsv'},          'BIDS events (*.tsv)',           'BIDS'; ...
+                    {'.tsv'},          'BIDS events: onset, duration, trial_type, channel (*.tsv)', 'BIDS'; ...
                     {'.vmrk'},         'BrainVision BrainAmp (*.vmrk)', 'BRAINAMP'; ...
                     {'_events'},       'Brainstorm (events*.mat)',      'BST'; ...
                     {'.mrk'},          'Cartool (*.mrk)',               'CARTOOL'; ...
@@ -3404,8 +3426,10 @@ switch contextName
                     {'.gii'},    'GIfTI texture (*.gii)',         'GII-TEX'; ...
                     {'.dset'},   'SUMA atlas (*.dset)',           'DSET'; ...
                     {'_scout'},  'Brainstorm scouts (*scout*.mat)', 'BST'; ...
-                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'Volume mask or atlas (subject space)', 'MRI-MASK'; ...
-                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz'},                  'Volume mask or atlas (MNI space)',     'MRI-MASK-MNI'; ...
+                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'Volume mask or atlas (dilated, subject space)', 'MRI-MASK'; ...
+                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz'},                  'Volume mask or atlas (dilated, MNI space)',     'MRI-MASK-MNI'; ...
+                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'Volume mask or atlas (no overlap, subject space)', 'MRI-MASK-NOOVERLAP'; ...
+                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz'},                  'Volume mask or atlas (no overlap, MNI space)',     'MRI-MASK-NOOVERLAP-MNI'; ...
                     };
             case 'resultsout'
                 argout1 = {...
@@ -3676,6 +3700,10 @@ function [sFoundStudy, iFoundStudy, iItem] = findFileInStudies(fieldGroup, field
     sFoundStudy = [];
     iFoundStudy = [];
     iItem       = [];
+    % If no file provided, return
+    if isempty(fieldFile)
+        return;
+    end
     % Extract folder(s) of the file(s) we're looking for
     fieldParts = strfind(fieldFile, '|');
     if ~isempty(fieldParts)

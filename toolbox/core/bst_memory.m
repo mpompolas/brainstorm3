@@ -1010,7 +1010,7 @@ function [iDS, iResult] = LoadResultsFile(ResultsFile, isTimeCheck)
     % Get variables list
     File_whos = whos('-file', ResultsFullFile);
     
-    % ===== Is Result file is already loaded ? ====
+    % ===== Is Result file is already loaded ? ====  
     % If Result file is dependent from a Data file
     if ~isempty(DataFile)
         % Load (or simply get) DataSet associated with DataFile
@@ -1042,11 +1042,18 @@ function [iDS, iResult] = LoadResultsFile(ResultsFile, isTimeCheck)
     GlobalData.DataSet(iDS).StudyFile   = file_short(sStudy.FileName);
     
     % === NORMAL RESULTS FILE ===
+    NumberOfSamples = [];
+    SamplingRate = [];
     if any(strcmpi('ImageGridAmp', {File_whos.name}))
         % Load results .Mat
         ResultsMat = in_bst_results(ResultsFullFile, 0, 'Comment', 'Time', 'ChannelFlag', 'SurfaceFile', 'HeadModelType', 'ColormapType', 'DisplayUnits', 'GoodChannel', 'Atlas');
+        % Raw file: Use only the loaded time window
+        if ~isempty(DataFile) && strcmpi(GlobalData.DataSet(iDS).Measures.DataType, 'raw') && ~isempty(strfind(ResultsFullFile, '_KERNEL_'))
+            Time = GlobalData.DataSet(iDS).Measures.Time;
+            NumberOfSamples = GlobalData.DataSet(iDS).Measures.NumberOfSamples;
+            SamplingRate = GlobalData.DataSet(iDS).Measures.SamplingRate;
         % If Time does not exist, try to rebuild it
-        if isempty(ResultsMat.Time)
+        elseif isempty(ResultsMat.Time)
             % If DataSet.Measures is empty (if no data was loaded)
             if isempty(GlobalData.DataSet(iDS).Measures.Time)
                 % It is impossible to reconstruct the time vector => impossible to load ResultsFile
@@ -1080,6 +1087,13 @@ function [iDS, iResult] = LoadResultsFile(ResultsFile, isTimeCheck)
     if (length(Time) == 1)
         Time = [0,0.001] + Time;
     end
+    % Sampling rate and number of samples
+    if isempty(NumberOfSamples)
+        NumberOfSamples = length(Time);
+    end
+    if isempty(SamplingRate)
+        SamplingRate = Time(2)-Time(1);
+    end
     
     % ===== LOAD CHANNEL FILE =====
     if ~isempty(ChannelFile)
@@ -1096,8 +1110,8 @@ function [iDS, iResult] = LoadResultsFile(ResultsFile, isTimeCheck)
     Results.SurfaceFile     = ResultsMat.SurfaceFile;
     Results.Comment         = ResultsMat.Comment;
     Results.Time            = Time([1, end]);
-    Results.NumberOfSamples = length(Time);
-    Results.SamplingRate    = Time(2)-Time(1);
+    Results.NumberOfSamples = NumberOfSamples;
+    Results.SamplingRate    = SamplingRate;
     Results.ColormapType    = ResultsMat.ColormapType;
     Results.DisplayUnits    = ResultsMat.DisplayUnits;
     Results.Atlas           = ResultsMat.Atlas;
@@ -1789,11 +1803,14 @@ function R = GetConnectMatrixStd(Timefreq) %#ok<DEFNU>
     if (length(Timefreq.RowNames) == length(Timefreq.RefRowNames)) && (size(Timefreq.Std,1) < length(Timefreq.RowNames)^2)
         Timefreq.Std = process_compress_sym('Expand', Timefreq.Std, length(Timefreq.RowNames));
     end
-    % Reshape Std matrix: [Nrow x Ncol x Ntime x nFreq]
-    nTime = size(Timefreq.Std, 2);
-    nFreq = size(Timefreq.Std, 3);
-    R = reshape(Timefreq.Std, [length(Timefreq.RefRowNames), length(Timefreq.RowNames), nTime, nFreq]);
+    % Reshape Std matrix: [Nrow x Ncol x Ntime x nFreq x nBounds]
+    nTime   = size(Timefreq.Std, 2);
+    nFreq   = size(Timefreq.Std, 3);
+    nBounds = size(Timefreq.Std, 4);
+    R = reshape(Timefreq.Std, [length(Timefreq.RefRowNames), length(Timefreq.RowNames), nTime, nFreq, nBounds]);
 end
+
+
 
 
 %% ===== LOAD MATRIX FILE =====
@@ -1943,7 +1960,7 @@ function [DataValues, Std] = GetRecordingsValues(iDS, iChannel, iTime, isGradMag
         DataType = GlobalData.DataSet(iDS).Measures.DataType;
         % Get standard deviation
         if ~isempty(GlobalData.DataSet(iDS).Measures.Std)
-            Std = GlobalData.DataSet(iDS).Measures.Std(iChannel, iTime);
+            Std = GlobalData.DataSet(iDS).Measures.Std(iChannel, iTime, :, :);
         else
             Std = [];
         end
@@ -1955,7 +1972,9 @@ function [DataValues, Std] = GetRecordingsValues(iDS, iChannel, iTime, isGradMag
             DataValues = bst_scale_gradmag( DataValues, GlobalData.DataSet(iDS).Channel(iChannel));
             % Normalize standard deviation too
             if ~isempty(Std)
-                Std = bst_scale_gradmag(Std, GlobalData.DataSet(iDS).Channel(iChannel));
+                for iBound = 1:size(Std, 4)
+                    Std(:,:,:,iBound) = bst_scale_gradmag(Std(:,:,:,iBound), GlobalData.DataSet(iDS).Channel(iChannel));
+                end
             end
         end
     else
@@ -2012,12 +2031,12 @@ function [ResultsValues, nComponents, Std] = GetResultsValues(iDS, iResult, iVer
         if isempty(iRows)
             ResultsValues = double(GlobalData.DataSet(iDS).Results(iResult).ImageGridAmp(:, iTime));
             if ~isempty(GlobalData.DataSet(iDS).Results(iResult).Std)
-                Std = double(GlobalData.DataSet(iDS).Results(iResult).Std(:, iTime));
+                Std = double(GlobalData.DataSet(iDS).Results(iResult).Std(:, iTime, :, :));
             end
         else
             ResultsValues = double(GlobalData.DataSet(iDS).Results(iResult).ImageGridAmp(iRows, iTime));
             if ~isempty(GlobalData.DataSet(iDS).Results(iResult).Std)
-                Std = double(GlobalData.DataSet(iDS).Results(iResult).Std(iRows, iTime));
+                Std = double(GlobalData.DataSet(iDS).Results(iResult).Std(iRows, iTime, :, :));
             end
         end
     % === KERNEL ONLY ===

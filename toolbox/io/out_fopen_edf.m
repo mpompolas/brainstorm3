@@ -162,12 +162,12 @@ header.hdrlen = 256 + 256 * header.nsignal;
 for i = 1:header.nsignal
     if ~isRawEdf
         % Choose unit based on maximal value
-        if Fmax(i) > 1
+        if Fmax(i) > 0.1
             header.signal(i).unit = 'V';
             header.signal(i).unit_gain = 1;
-        elseif Fmax(i) * 1e3 > 1
-            header.signal(i).unit = 'mV';
-            header.signal(i).unit_gain = 1e3;
+%         elseif Fmax(i) * 1e3 > 1
+%             header.signal(i).unit = 'mV';
+%             header.signal(i).unit_gain = 1e3;
         else
             header.signal(i).unit = 'uV';
             header.signal(i).unit_gain = 1e6;
@@ -191,7 +191,11 @@ for i = 1:header.nsignal
         % Convert chars (1-byte) to 2-byte integers, the size of a sample
         header.signal(i).nsamples = int64((header.signal(i).nsamples + 1) / 2);
     else
-        header.signal(i).label = [ChannelMat.Channel(i).Type, ' ', ChannelMat.Channel(i).Name];
+        if strcmpi(ChannelMat.Channel(i).Type, 'EEG_NO_LOC')
+            header.signal(i).label = ['EEG ', ChannelMat.Channel(i).Name];
+        else
+            header.signal(i).label = [ChannelMat.Channel(i).Type, ' ', ChannelMat.Channel(i).Name];
+        end
         header.signal(i).nsamples = header.reclen * sFileIn.prop.sfreq;
     end
 end
