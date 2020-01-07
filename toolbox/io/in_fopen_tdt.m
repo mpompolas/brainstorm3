@@ -25,7 +25,7 @@ function [sFile, ChannelMat] = in_fopen_tdt(DataFile)
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Author: Konstantinos Nasiotis 2019
+% Author: Konstantinos Nasiotis 2019, 2020
 
 
 % Not available in the compiled version
@@ -69,6 +69,9 @@ end
 
 %% ===== READ DATA HEADERS =====
 
+bst_progress('start', 'TDT', 'Reading headers...');
+
+
 % Load one second segment to see what type of signals exist in this dataset
 % Use as general sampling rate the rate of the HIGHEST sampled signal
 % The signals that have a lower sampling rate will be interpolated to match
@@ -79,30 +82,36 @@ headers = TDTbin2mat(DataFolder, 'HEADERS', 1);
 data = TDTbin2mat(DataFolder, 'T1', 0, 'T2', 1); % 1 second segment
 all_streams = fieldnames(data.streams);
 
+
+%% Get rid of streams that are pNe and SynC
+
+all_streams = all_streams(~ismember(all_streams,{'pNe1','pNe2','pNe3','pNe4','SynC'}));
+
 several_sampling_rates = [];
-total_channels         = [];
 
 % The sampling rates present are the weirdest numbers I have ever seen:
 % e.g. Fs = 3051.7578125 Hz !!!
 % Those numbers create problems when loading segments of data.
 % The segment loading is in TimeBounds, not SampleBounds that makes it even
 % worse with those sampling rates
+stream_info = struct;
+
 for iStream = 1:length(all_streams)
-    several_sampling_rates = [several_sampling_rates data.streams.(all_streams{iStream}).fs];
-    total_channels         = [total_channels, size(data.streams.(all_streams{iStream}).data,1)];
+    stream_info(iStream).label          = all_streams{iStream};
+    stream_info(iStream).fs             = data.streams.(all_streams{iStream}).fs;
+    stream_info(iStream).total_channels = size(data.streams.(all_streams{iStream}).data,1);
 end
 
-[general_sampling_rate iHighestSampledChannel] = max(several_sampling_rates);
+% Brainstorm needs a single sampling rate. I assign the maximum
+[general_sampling_rate iHighestSampledChannel] = max([stream_info.fs]);
 
-nChannels = sum(total_channels);
+nChannels = sum([stream_info.total_channels]);
 
  %% ===== CREATE BRAINSTORM SFILE STRUCTURE =====
 % Initialize returned file structure
 sFile = db_template('sfile');
 
-
-
- % Add information read from header
+% Add information read from header
 sFile.prop.sfreq   =  general_sampling_rate;
 sFile.byteorder    = 'l';
 sFile.filename     = DataFolder;
@@ -115,20 +124,18 @@ sFile.prop.nAvg    = 1;
 % No info on bad channels
 sFile.channelflag  = ones(nChannels, 1);
 
-sFile.header.several_sampling_rates = several_sampling_rates;
-sFile.header.total_channels         = total_channels;
-sFile.header.all_streams            = all_streams;
+sFile.header.stream_info = stream_info;
 
- %% ===== CREATE EMPTY CHANNEL FILE =====
+%% ===== CREATE EMPTY CHANNEL FILE =====
 ChannelMat = db_template('channelmat');
 ChannelMat.Comment = 'TDT channels';
 ChannelMat.Channel = repmat(db_template('channeldesc'), [1, nChannels]);
 
 ii = 0;
 for iStream = 1:length(all_streams)
-     for iChannel = 1:total_channels(iStream)
+     for iChannel = 1:stream_info(iStream).total_channels
          ii = ii+1;
-         if ~(total_channels(iStream)==1)
+         if ~(stream_info(iStream).total_channels==1)
             ChannelMat.Channel(ii).Name = [all_streams{iStream} '_' num2str(iChannel)];
          else
              ChannelMat.Channel(ii).Name= [all_streams{iStream}];
@@ -137,10 +144,10 @@ for iStream = 1:length(all_streams)
 
          ChannelMat.Channel(ii).Group   = all_streams{iStream};
          
-         if ~(total_channels(iStream) == 1)
+         if strfind(stream_info(iStream).label,'LFP')
             ChannelMat.Channel(ii).Type = 'EEG'; % Not all are EEGs - NOT SURE WHAT TO PUT HERE - AS A STARTING POINT, I PUT WHATEVER IS ONLY ONE CHANNEL SET IT AS Misc
          else
-            ChannelMat.Channel(ii).Type = 'Misc';
+            ChannelMat.Channel(ii).Type = all_streams{iStream};
          end
          ChannelMat.Channel(ii).Orient  = [];
          ChannelMat.Channel(ii).Weight  = 1;
@@ -151,7 +158,10 @@ end
 
 %% Check for acquisition events
 
-NO_data = TDTbin2mat(DataFolder, 'NODATA',1); % Memory Management???
+bst_progress('start', 'TDT', 'Collecting acquisition events...');
+
+disp('Getting Acquisition System events')
+NO_data = TDTbin2mat(DataFolder, 'TYPE', 2); % Just load epocs / events
 
 are_there_events = ~isempty(NO_data.epocs);
 
@@ -199,6 +209,11 @@ end
     
 %% Check for spike events
 
+bst_progress('start', 'TDT', 'Collecting spiking events...');
+
+disp('Getting spiking events')
+NO_data = TDTbin2mat(DataFolder, 'TYPE', 3); % Just load epocs / events
+
 are_there_spikes = ~isempty(NO_data.snips);
 
 if  ~exist ('events','var')
@@ -242,7 +257,7 @@ if are_there_spikes
 
                     events(last_event_index).color      = rand(1,3);
                     events(last_event_index).epochs     = ones(1,length(SpikesOfThatNeuronOnChannel_Indices));
-                    events(last_event_index).times      = round(events(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).ts(SpikesOfThatNeuronOnChannel_Indices)' .* general_sampling_rate)) ./ general_sampling_rate;
+                    events(last_event_index).times      = NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).ts(SpikesOfThatNeuronOnChannel_Indices)';
                     events(last_event_index).reactTimes = [];
                     events(last_event_index).select     = 1;
                     events(last_event_index).channels   = cell(1, size(events(last_event_index).times, 2));
@@ -260,15 +275,12 @@ end
 
 
 
-
-
-
-
- function downloadAndInstallTDT()
+function downloadAndInstallTDT()
 
     TDTDir = bst_fullfile(bst_get('BrainstormUserDir'), 'TDT');
     TDTTmpDir = bst_fullfile(bst_get('BrainstormUserDir'), 'TDT_tmp');
-    url = 'https://www.tdt.com/support/examples/TDTMatlabSDK.zip';
+    url = 'https://www.tdt.com/files/examples/TDTMatlabSDK.zip';
+           
     % If folders exists: delete
     if isdir(TDTDir)
         file_delete(TDTDir, 1, 3);
@@ -315,6 +327,8 @@ end
     file_delete(TDTTmpDir, 1, 3);
     % Add TDT to Matlab path
     addpath(genpath(TDTDir));
+    
+    bst_progress('start', 'TDT', 'TDT SDK successfully installed');
 
  end
 

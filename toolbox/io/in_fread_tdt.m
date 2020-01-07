@@ -49,7 +49,7 @@ function F = in_fread_tdt(sFile, SamplesBounds, selectedChannels)
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Author: Konstantinos Nasiotis 2019
+% Author: Konstantinos Nasiotis 2019, 2020
 
 
  % Parse inputs
@@ -63,10 +63,7 @@ end
 nChannels = length(selectedChannels);
 nSamples = SamplesBounds(2) - SamplesBounds(1) + 1;
 
-Fs = floor(max(sFile.header.several_sampling_rates));
-
-
-
+Fs = ceil(max([sFile.header.stream_info.fs]));
 
 
 %% The importer for TDT, imports based on timeBounds, not samplebounds
@@ -76,33 +73,55 @@ Fs = floor(max(sFile.header.several_sampling_rates));
 % rate of the highest sampled signal (typically LFP or Raw)
 % This might create a problem at certain datasets.
 
+stream_info = sFile.header.stream_info;
+nChannels   = sum([sFile.header.stream_info.total_channels]);
 
-data = TDTbin2mat(sFile.filename, 'T1', SamplesBounds(1)/Fs, 'T2', SamplesBounds(2)/Fs);
 
+tic
+data = TDTbin2mat(sFile.filename, 'TYPE', 4, 'T1', SamplesBounds(1)/Fs, 'T2', SamplesBounds(2)/Fs);
+toc
 
 F = zeros(length(selectedChannels), nSamples);
 ii = 1;
-for iStream = 1:length(sFile.header.total_channels)
+for iStream = 1:length(stream_info)
 
     % DO THE EXTRAPOLATION HERE FOR THE LOW SAMPLED SIGNALS (EYE TRACES, ARM MOVEMENTS ETC.)
-    if sFile.header.several_sampling_rates(iStream) ~= max(sFile.header.several_sampling_rates)
-        if mod(max(sFile.header.several_sampling_rates),sFile.header.several_sampling_rates(iStream))~=0
-            warning ('The sampling rate of the extra channels is not divided by the sampling rate of the EEG signals - POTENTIAL ERROR')
+    if ceil(stream_info(iStream).fs) ~= Fs
+        
+        
+        low_sampled_signal = double(data.streams.(stream_info(iStream).label).data);
+        
+        temp = zeros(size(low_sampled_signal,1),nSamples);
+        for iChannel = 1:size(low_sampled_signal,1)
+            
+            %1. UPSAMPLE AND DROP RANDOM ENTRIES
+            % Upsampling the lower sampled behavioral signals
+            upsampled_position = repelem(low_sampled_signal(iChannel,:),ceil(nSamples/length(low_sampled_signal)));
+            logical_keep = true(1,length(upsampled_position));
+            random_points_to_remove = randperm(length(upsampled_position),length(upsampled_position)-nSamples);
+            logical_keep(random_points_to_remove) = false;
+            temp(iChannel,:) = upsampled_position(logical_keep);
+            
+%             %2. INTERPOLLATION
+%             temp(iChannel,:) = interp(double(data.streams.(stream_info(iStream).label).data),round(Fs/stream_info(iStream).fs));
+
         end
-        temp = interp(double(data.streams.(sFile.header.all_streams{iStream}).data),round(max(sFile.header.several_sampling_rates)/sFile.header.several_sampling_rates(iStream)));
+        
+        
     else
-        temp = double(data.streams.(sFile.header.all_streams{iStream}).data);
+        temp = double(data.streams.(stream_info(iStream).label).data);
     end
 
     % At the end of the signals' length, since the loading based on time is awful,
     % leave the extra samples as zeros (shouldn't create a problem)
     if nSamples > size(temp,2)
-        F(ii : ii + sFile.header.total_channels(iStream) - 1,1:size(temp,2)) = temp; clear temp
+        F(ii : ii + stream_info(iStream).total_channels - 1,1:size(temp,2)) = temp; clear temp
     else  
-        F(ii : ii + sFile.header.total_channels(iStream) - 1,:) = temp(:,1:nSamples); clear temp
+        F(ii : ii + stream_info(iStream).total_channels - 1,:) = temp(:,1:nSamples); clear temp
     end
-    ii = ii + sFile.header.total_channels(iStream);
+    ii = ii + stream_info(iStream).total_channels;
 end
+
 
 
 % Lazy selection, Improve
