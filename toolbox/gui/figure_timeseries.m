@@ -66,7 +66,7 @@ function hFig = CreateFigure(FigureId)
                   'Renderer',      rendererName, ...
                   'Color',         [.8 .8 .8], ...
                   'CloseRequestFcn',          @(h,ev)bst_figures('DeleteFigure',h,ev), ...
-                  'KeyPressFcn',              @FigureKeyPressedCallback, ...
+                  'KeyPressFcn',              @(h,ev)bst_call(@FigureKeyPressedCallback, h, ev), ...
                   'WindowButtonDownFcn',      @FigureMouseDownCallback, ...
                   'WindowButtonUpFcn',        @FigureMouseUpCallback, ...
                   bst_get('ResizeFunction'),  @ResizeCallback);
@@ -413,7 +413,14 @@ function FigureMouseDownCallback(hFig, ev)
                 setappdata(hFig, 'MovingTimeBarAction', 'move');
             end
             setappdata(hFig, 'MovingTimeBar', hObj);
-        case {'TimeSelectionPatch', 'TimeZeroLine', 'Cursor', 'TextCursor', 'GFP', 'GFPTitle'}
+        case 'TimeSelectionPatch'
+            % Shift+click: zoom into selection (otherwise, regular click)
+            if strcmpi(MouseStatus, 'extend')
+                ZoomSelection(hFig);
+            else
+                hAxes = get(hObj, 'Parent');
+            end
+        case {'TimeZeroLine', 'Cursor', 'TextCursor', 'GFP', 'GFPTitle'}
             hAxes = get(hObj, 'Parent');
         case 'legend'
             legendButtonDownFcn = get(hObj, 'ButtonDownFcn');
@@ -746,6 +753,7 @@ function SetTimeSelectionManual(hFig, newSelection)
     SetTimeSelectionLinked(hFig, newSelection);
 end
 
+
 %% ===== DRAW TIME SELECTION =====
 function DrawTimeSelection(hFig)
     global GlobalData;
@@ -875,6 +883,21 @@ function DrawTimeSelection(hFig)
             set(findobj(hFig, '-depth', 1, 'Tag', 'TextTimeSel'), 'Visible', 'off');
         end
     end
+end
+
+
+%% ===== ZOOM INTO SELECTION =====
+function ZoomSelection(hFig)
+    % Get time selection
+	GraphSelection = getappdata(hFig, 'GraphSelection');
+    if isempty(GraphSelection) || isinf(GraphSelection(2))
+        return;
+    end
+    % Set axes bounds to selection
+    hAxesList = findobj(hFig, '-depth', 1, 'Tag', 'AxesGraph');
+    set(hAxesList, 'XLim', [GraphSelection(1), GraphSelection(2)]);
+    % Delete selection
+    SetTimeSelectionLinked(hFig, []);
 end
 
 
@@ -1012,10 +1035,10 @@ function FigureZoom(hFig, direction, Factor, center)
         case 'horizontal'
             % Start by displaying the full resolution if necessary
             [hFig, iFig, iDS] = bst_figures('GetFigure', hFig);
-            if (GlobalData.DataSet(iDS).Figure(iFig).Handles.DownsampleFactor > 1)
+            if (GlobalData.DataSet(iDS).Figure(iFig).Handles(1).DownsampleFactor > 1)
                 set(hFig, 'Pointer', 'watch');
                 drawnow;
-                GlobalData.DataSet(iDS).Figure(iFig).Handles.DownsampleFactor = 1;
+                GlobalData.DataSet(iDS).Figure(iFig).Handles(1).DownsampleFactor = 1;
                 figure_timeseries('PlotFigure', iDS, iFig, [], [], 1);
                 set(hFig, 'Pointer', 'arrow');
             end
@@ -1050,8 +1073,8 @@ function FigurePan(hFig, motion)
     % Displacement in X
     if (motion(1) ~= 0)
         % Get initial and current XLim
-        XLimInit = getappdata(hAxes, 'XLimInit');
-        XLim = get(hAxes, 'XLim');
+        XLimInit = getappdata(hAxes(1), 'XLimInit');
+        XLim = get(hAxes(1), 'XLim');
         % Move view along X axis
         XLim = XLim - (XLim(2) - XLim(1)) * motion(1);
         XLim = bst_saturate(XLim, XLimInit, 1);
@@ -1062,8 +1085,8 @@ function FigurePan(hFig, motion)
     % Displacement in Y
     if (motion(2) ~= 0)
         % Get initial and current YLim
-        YLimInit = getappdata(hAxes, 'YLimInit');
-        YLim = get(hAxes, 'YLim');
+        YLimInit = getappdata(hAxes(1), 'YLimInit');
+        YLim = get(hAxes(1), 'YLim');
         % Move view along Y axis
         YLim = YLim - (YLim(2) - YLim(1)) * motion(2);
         YLim = bst_saturate(YLim, YLimInit, 1);
@@ -2256,6 +2279,7 @@ function DisplayFigurePopup(hFig, menuTitle, curTime, selChan)
     GraphSelection = getappdata(hFig, 'GraphSelection');
     isTimeSelection = ~isempty(GraphSelection) && ~isinf(GraphSelection(2));
     if isTimeSelection
+        gui_component('MenuItem', jMenuSelection, [], 'Zoom into selection (Shift+click)', IconLoader.ICON_ZOOM_PLUS, [], @(h,ev)ZoomSelection(hFig));
         jMenuSelection.addSeparator();
         % ONLY FOR ORIGINAL DATA FILES
         if strcmpi(FigId.Type, 'DataTimeSeries') && ~isempty(FigId.Modality) && (FigId.Modality(1) ~= '$') && ~isempty(DataFile)
@@ -2370,7 +2394,7 @@ function DisplayConfigMenu(hFig, jParent)
     TsInfo = getappdata(hFig, 'TsInfo');
     FigureId = GlobalData.DataSet(iDS).Figure(iFig).Id;
     isRaw = strcmpi(GlobalData.DataSet(iDS).Measures.DataType, 'raw');
-    isSource = ismember(FigureId.Modality, {'results', 'timefreq', 'stat', 'none'});
+    isSource = ~isempty(FigureId.Modality) && ismember(FigureId.Modality, {'results', 'timefreq', 'stat', 'none'});
     % Get all other figures
     hFigAll = bst_figures('GetFiguresByType', FigureId.Type);
     
@@ -2447,11 +2471,11 @@ function DisplayConfigMenu(hFig, jParent)
                 jItem = gui_component('CheckBoxMenuItem', jMenu, [], 'Set axes resolution...', IconLoader.ICON_MATRIX, [], @(h,ev)SetResolution(iDS, iFig));
                 jItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, KeyEvent.CTRL_MASK)); 
             end
-        end
-        % Uniform amplitude scales
-        if ~isRaw && (length(hFigAll) > 1)
-            jItem = gui_component('CheckBoxMenuItem', jMenu, [], 'Uniform amplitude scales', [], [], @(h,ev)panel_record('UniformTimeSeries_Callback',h,ev));
-            jItem.setSelected(bst_get('UniformizeTimeSeriesScales'));
+            % Uniform amplitude scales
+            if ~isRaw && (length(hFigAll) > 1)
+                jItem = gui_component('CheckBoxMenuItem', jMenu, [], 'Uniform amplitude scales', [], [], @(h,ev)panel_record('UniformTimeSeries_Callback',h,ev));
+                jItem.setSelected(bst_get('UniformizeTimeSeriesScales'));
+            end
         end
         % Standardize data
         if strcmpi(FigureId.Type, 'DataTimeSeries')
@@ -3085,12 +3109,29 @@ function PlotHandles = PlotAxes(iDS, hAxes, PlotHandles, TimeVector, F, TsInfo, 
 
     % ===== PARSE LINE LABELS =====
     % Get colors from montage (not for scouts, only for recordings)
+    LinesFilter = [];
     if ~strcmpi(TsInfo.Modality, 'results') && ~strcmpi(TsInfo.Modality, 'timefreq') && (~isempty(TsInfo.Modality) && (TsInfo.Modality(1) ~= '$')) && ~isempty(LinesLabels)
         % Parse montage labels
-        [LinesLabels, MontageColors] = panel_montage('ParseMontageLabels', LinesLabels, DefaultColor);
+        [LinesLabels, MontageColors, LinesFilter] = panel_montage('ParseMontageLabels', LinesLabels, DefaultColor);
         % Replace plot colors if available
         if ~isempty(MontageColors) && isempty(LinesColor)
             LinesColor = MontageColors;
+        end
+    end
+    
+    % ===== MONTAGE FREQUENCY FILTERS =====
+    if ~isempty(LinesFilter) && (size(LinesFilter,1) == size(F,1)) && ~all(LinesFilter(:) == 0)
+        % Filter each signal independently
+        for iLine = 1:size(F,1)
+            if ~all(LinesFilter(iLine,:) == 0)
+                sfreq = 1./GlobalData.DataSet(iDS).Measures.SamplingRate;
+                isMirror = 0;
+                isRelax = 1;
+                [F(iLine,:), FiltSpec, Messages] = process_bandpass('Compute', F(iLine,:), sfreq, LinesFilter(iLine,1), LinesFilter(iLine,2), 'bst-hfilter-2019', isMirror, isRelax);
+                % if ~isempty(Messages)
+                %     disp(['BST> Montage warning for line "'  LinesLabels{iLine} '": ' Messages(1:end-1)]);
+                % end
+            end
         end
     end
 
@@ -3943,6 +3984,8 @@ function SetScaleX(hFig, newMode)
     hAxes = findobj(hFig, '-depth', 1, 'tag', 'AxesGraph');
     set(hAxes, 'XScale', newMode);
     setappdata(hFig, 'TsInfo', TsInfo);
+    % Update value
+    bst_set('XScale', newMode);
 end
 
 

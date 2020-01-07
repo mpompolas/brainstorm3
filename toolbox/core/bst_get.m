@@ -29,6 +29,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('FieldTripDir')          : Full path to a local installation of FieldTrip
 %    - bst_get('SpmDir')                : Full path to a local installation of SPM
 %    - bst_get('SpmTpmAtlas')           : Full path to the SPM atlas TPM.nii
+%    - bst_get('PythonConfig')          : Configuration of the python environment from Matlab
 %
 % ====== PROTOCOLS ====================================================================
 %    - bst_get('iProtocol')             : Indice of current protocol 
@@ -176,6 +177,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('ShowEventsMode')             : {'dot','line','none'}
 %    - bst_get('Resolution')                 : [resX,resY] fixed resolutions for X and Y axes
 %    - bst_get('FixedScaleY', Modality)      : Struct with the scales to impose on the recordings for the selected modality
+%    - bst_get('XScale', XScale)             : {'log', 'linear'}
 %    - bst_get('UseSigProcToolbox')       : Use Matlab's Signal Processing Toolbox when available
 %    - bst_get('RawViewerOptions', sFile) : Display options for RAW recordings, adapt for specific file
 %    - bst_get('RawViewerOptions')        : Display options for RAW recordings
@@ -2201,17 +2203,9 @@ switch contextName
         end
         % Get defaults from internet 
         if ~ismember(lower({sTemplates.Name}), 'icbm152')
-            sTemplates(end+1).FilePath = 'https://neuroimage.usc.edu/bst/getupdate.php?t=ICBM152_2016c';
+            sTemplates(end+1).FilePath = 'https://neuroimage.usc.edu/bst/getupdate.php?t=ICBM152_2019';
             sTemplates(end).Name = 'ICBM152';
         end
-%         if ~ismember(lower({sTemplates.Name}), 'icbm152_2016')
-%             sTemplates(end+1).FilePath = 'https://neuroimage.usc.edu/bst/getupdate.php?t=ICBM152_2016';
-%             sTemplates(end).Name = 'ICBM152_2016';
-%         end
-%         if ~ismember(lower({sTemplates.Name}), 'icbm152_2016c')
-%             sTemplates(end+1).FilePath = 'https://neuroimage.usc.edu/bst/getupdate.php?t=ICBM152_2016c';
-%             sTemplates(end).Name = 'ICBM152_2016c';
-%         end
         if ~ismember(lower({sTemplates.Name}), 'icbm152_2019')
             sTemplates(end+1).FilePath = 'https://neuroimage.usc.edu/bst/getupdate.php?t=ICBM152_2019';
             sTemplates(end).Name = 'ICBM152_2019';
@@ -2456,6 +2450,13 @@ switch contextName
             argout1 = [];
         end
         
+    case 'XScale'
+        if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'XScale')
+            argout1 = GlobalData.Preferences.XScale;
+        else
+            argout1 = 'linear';
+        end
+        
     case 'ShowEventsMode'
         if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'ShowEventsMode')
             argout1 = GlobalData.Preferences.ShowEventsMode;
@@ -2615,6 +2616,30 @@ switch contextName
         disp([' - ' tpmDistrib]);
         if ~isempty(spmDir)
             disp([' - ' tpmSpm]);
+        end
+
+        % Return the preferred location: .brainstorm/defaults/spm/TPM.nii
+        argout1 = tpmUser;
+        
+    case 'PythonConfig'
+        defPref = struct(...
+            'PythonExe',  '', ...
+            'PythonPath', 0, ...
+            'QtDir',      '');
+        argout1 = FillMissingFields(contextName, defPref);
+        % Check that the python executable is available
+        if ~isempty(argout1.PythonExe) && ~file_exist(argout1.PythonExe)
+            disp(['Error: Python executable not found: ' argout1.PythonExe]);
+            argout1.PythonExe = '';
+        elseif ~ischar(argout1.PythonExe)
+            argout1.PythonExe = '';
+        end
+        % Check the validity of the other values
+        if ~ischar(argout1.PythonPath)
+            argout1.PythonPath = '';
+        end
+        if ~ischar(argout1.QtDir)
+            argout1.QtDir = '';
         end
         
     case 'ElectrodeConfig'
@@ -3245,6 +3270,7 @@ switch contextName
                      {'.eeg'},               'EEG: Nihon Kohden (*.eeg)',            'EEG-NK'; ...
                      {'.plx','.pl2'},        'EEG: Plexon (*.plx;*.pl2)',            'EEG-PLEXON'; ...
                      {'.ns1','.ns2','.ns3','.ns4','.ns5','.ns6'}, 'EEG: Ripple Trellis (*.nsX/*.nev)', 'EEG-RIPPLE'; ...
+                     {'.csv'},               'EEG: Wearable Sensing (*.csv)',        'EEG-WS-CSV'; ...
                      {'.nirs'},              'NIRS: Brainsight (*.nirs)',            'NIRS-BRS'; ...
                      {'.edf'},               'EyeLink eye tracker (*.edf)',          'EYELINK'; ...
                     };
@@ -3294,6 +3320,7 @@ switch contextName
                      {'.plx','.pl2'},        'EEG: Plexon (*.plx;.pl2)'              'EEG-PLEXON'; ...
                      {'.ns1','.ns2','.ns3','.ns4','.ns5','.ns6'}, 'EEG: Ripple Trellis (*.nsX/*.nev)', 'EEG-RIPPLE'; ...
                      {'.tbk'},               'EEG: Tucker Davis Technologies (*.tbk)',    'EEG-TDT'; ...
+                     {'.csv'},               'EEG: Wearable Sensing (*.csv)',        'EEG-WS-CSV'; ...
                      {'.trc','.eeg','.e','.bin','.rda','.edf','.bdf'}, 'SEEG: Deltamed/Micromed/NK/Nicolet/BrainAmp/EDF', 'SEEG-ALL'; ...
                      {'.trc','.eeg','.e','.bin','.rda','.edf','.bdf'}, 'ECOG: Deltamed/Micromed/NK/Nicolet/BrainAmp/EDF', 'ECOG-ALL'; ...
                      {'.nirs'},              'NIRS: Brainsight (*.nirs)',            'NIRS-BRS'; ...
@@ -3345,6 +3372,7 @@ switch contextName
                     {'.mrk','.sqd','.con','.raw','.ave'},   'Yokogawa/KIT (*.mrk;*.sqd;*.con;*.raw;*.ave)', 'KIT'; ...
                     {'.*'},            'Array of times (*.mat;*.*)',    'ARRAY-TIMES'; ...
                     {'.*'},            'Array of samples (*.mat;*.*)',  'ARRAY-SAMPLES'; ...
+                    {'.txt','.csv'},   'CSV text file: label, time, duration (*.txt;*.csv)', 'CSV-TIME'; ...
                     {'.*'},            'CTF Video Times (.txt)',        'CTFVIDEO'; ...
                     };
             case 'channel'
@@ -3422,7 +3450,8 @@ switch contextName
                 argout1 = {...
                     {'.dfs'},    'BrainSuite atlas (*.dfs)',      'DFS'; ...
                     {'.annot'},  'FreeSurfer atlas (*.annot)',    'FS-ANNOT'; ...
-                    {'.label'},  'FreeSurfer atlas (*.label)',    'FS-LABEL'; ...
+                    {'.label'},  'FreeSurfer ROI, single scout (*.label)',    'FS-LABEL-SINGLE'; ...
+                    {'.label'},  'FreeSurfer ROI, probability map (*.label)', 'FS-LABEL'; ...
                     {'.gii'},    'GIfTI texture (*.gii)',         'GII-TEX'; ...
                     {'.dset'},   'SUMA atlas (*.dset)',           'DSET'; ...
                     {'_scout'},  'Brainstorm scouts (*scout*.mat)', 'BST'; ...

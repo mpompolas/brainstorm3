@@ -201,11 +201,6 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, isInteractive, OPTIONS)
                                          min(newnode), max(newnode),...
                                          OPTIONS.KeepRatio, factor_bst .* OPTIONS.MaxVol, regions, []);  
 
-            % ######################################################################################
-            % TODO: THIS PART SHOULD BE AUTOMATED
-            % ######################################################################################
-            elem((elem(:,5)==0),5) = 3;
-
             % Mesh check and repair 
             [no,el] = removeisolatednode(node,elem(:,1:4));
             % Orientation required for the FEM computation (at least with SimBio, may be not for Duneuro)
