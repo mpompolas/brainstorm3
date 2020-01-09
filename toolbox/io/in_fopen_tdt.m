@@ -224,6 +224,13 @@ else
 end
 
 
+
+%%%%%%%%
+disp('CHECK THE SPIKES. THEY ARE ONLY ASSIGNED ON RIG TWO')
+%%%%%%%%
+
+
+
 if are_there_spikes
     all_spike_event_Labels = fieldnames(NO_data.snips);
     channels_are_EEG = find(strcmp({ChannelMat.Channel.Type}, 'EEG'));

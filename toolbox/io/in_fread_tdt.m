@@ -63,7 +63,7 @@ end
 nChannels = length(selectedChannels);
 nSamples = SamplesBounds(2) - SamplesBounds(1) + 1;
 
-Fs = ceil(max([sFile.header.stream_info.fs]));
+Fs = max([sFile.header.stream_info.fs]);
 
 
 %% The importer for TDT, imports based on timeBounds, not samplebounds
