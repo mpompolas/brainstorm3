@@ -35,7 +35,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.Comment     = 'ICA components - Parallel';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = 'Dancause Lab';
-    sProcess.Index       = 1;
+    sProcess.Index       = 1801;
     sProcess.Description = 'https://neuroimage.usc.edu/brainstorm/Tutorials/ICA';
     % Definition of the input accepted by this process
     sProcess.InputTypes  = {'raw'};
@@ -57,9 +57,9 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.eventtime.Type    = 'range';
     sProcess.options.eventtime.Value   = {[-.200, .200], 'ms', []};
     % Resample
-    sProcess.options.resample.Comment = 'Resample input signals (0=disable): ';
-    sProcess.options.resample.Type    = 'value';
-    sProcess.options.resample.Value   = {0, 'Hz', 2};
+    sProcess.options.resample_factor.Comment = 'Downsample Factor (1=disable): ';
+    sProcess.options.resample_factor.Type    = 'value';
+    sProcess.options.resample_factor.Value   = {1, [], 0};
     % Band-pass filter
     sProcess.options.bandpass.Comment = 'Frequency band (0=ignore): ';
     sProcess.options.bandpass.Type    = 'range';
@@ -75,7 +75,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Select components
     sProcess.options.icasort.Comment = 'Sort components based on correlation with (empty=none):';
     sProcess.options.icasort.Type    = 'text';
-    sProcess.options.icasort.Value   = 'EOG, ECG';    
+    sProcess.options.icasort.Value   = '';    
     % Use existing SSPs
     sProcess.options.usessp.Comment = 'Compute using existing SSP/ICA projectors';
     sProcess.options.usessp.Type    = 'checkbox';
@@ -89,6 +89,12 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.saveerp.Comment = 'Save averaged artifact in the database';
     sProcess.options.saveerp.Type    = 'checkbox';
     sProcess.options.saveerp.Value   = 0;
+    
+     % Options: Parallel Processing
+    sProcess.options.paral.Comment = 'Parallel processing';
+    sProcess.options.paral.Type    = 'checkbox';
+    sProcess.options.paral.Value   = 1;
+    
     % ICA method
     sProcess.options.method_label.Comment = '<BR>ICA method: ';
     sProcess.options.method_label.Type    = 'label';
@@ -97,6 +103,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
                                        % '<B>FastICA</B>: &nbsp;&nbsp;&nbsp;<I>http://research.ics.aalto.fi/ica/fastica</I>', ...
     sProcess.options.method.Type    = 'radio';
     sProcess.options.method.Value   = 1;
+    
 end
 
 
@@ -136,7 +143,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     end
     % Call recursively the function on each RAW file
     for iFile = 1:length(sInputs)
-        OutputFiles = cat(2, OutputFiles, process_ssp2('Run', sProcess, sInputs(iFile), sInputs(iFile)));
+        OutputFiles = cat(2, OutputFiles, process_ssp2_MOTOR_LAB('Run', sProcess, sInputs(iFile), sInputs(iFile)));
     end
 end
 
