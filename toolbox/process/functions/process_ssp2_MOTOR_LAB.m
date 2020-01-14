@@ -390,62 +390,78 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
             
             
             
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            % PARALLELIZE HERE
             
-%             PARALLELIZE HERE
-            
+            temp_nSamples = zeros(1,nOcc);
+            F = cell(1,nOcc);
+            TimeVector_temp = cell(1,nOcc);
+            parfor iOcc = 1:nOcc
+                
+                [Fevt, nSamples_single, TimeVector_single] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method);
 
-
-
-
-            
-            for iOcc = 1:nOcc
-                % Progress bar
-                bst_progress('set', progressPos + round(iOcc / nOcc * 50));
-                % Simple event: read a time window around the marker
-                if ~isExtended
-                    SamplesBounds = round(events(iEvt).times(1,iOcc) .* sFile.prop.sfreq) + evtSmpRange;
-                % Extended event: read the full event
-                else
-                    SamplesBounds = round(events(iEvt).times(:,iOcc)' .* sFile.prop.sfreq) + evtSmpRange;
-                end
-                % Check that this epoch is within the segment of file to consider
-                TimeBounds = SamplesBounds ./ sFile.prop.sfreq;
-                if ~isempty(TimeWindow) && ((TimeBounds(1) < TimeWindow(1)) || (TimeBounds(2) > TimeWindow(2)))
-                    continue;
-                end
-                % Check if this segment is outside of ALL the bad segments (either entirely before or entirely after)
-                if isIgnoreBad && ~isempty(badSeg) && (~all((SamplesBounds(2) < badSeg(1,:)) | (SamplesBounds(1) > badSeg(2,:))))
-                    nInfoBad = nInfoBad + 1;
-                    continue;
-                % Check if this this segment is  outside of the file bounds
-                elseif (TimeBounds(1) < sFile.prop.times(1)) || (TimeBounds(2) > sFile.prop.times(2)) 
-                    bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s #%d is too close to the beginning or end of the file: ignored...', evtName, iOcc));
-                    continue;
-                end
-                % Read block
-                [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
-                % SSP_mean: Check that we can get a time zero
-                if strcmpi(Method, 'SSP_mean')
-                    if ((TimeVector(1) > 0) || (TimeVector(end) < 0))
-                        bst_report('Warning', sProcess, sInputsA(iFile), ['File #"' num2str(iFile) '" does not have a time t=0, it cannot be used for the method "mean".']);
-                        continue;
-                    end
-                    % Get the sample where t=0
-                    iTimeZero{end+1} = bst_closest(0, TimeVector);
-                end
                 % Concatenate to final matrix
-                F{end+1} = Fevt;
-                nSamples = nSamples + size(Fevt,2);
-                % Check whether we read already all the samples we need
-                if ~isICA && (nSamples >= nMaxSamples)
-                    bst_report('Info', sProcess, sInputsA(iFile), sprintf('Reached the maximum number of samples at event %d / %d', iOcc, nOcc));
-                    break;
-                end
+                F{iOcc} = Fevt;
+                temp_nSamples(iOcc) = nSamples_single;
+                TimeVector_temp{iOcc} = TimeVector_single; % All are the same
+    
             end
-            % Display message with number of events ignored
-            if (nInfoBad > 0)
-                bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s: %d/%d events were in bad segments and ignored.', evtName, nInfoBad, nOcc));
-            end
+            TimeVector = TimeVector_temp{1};
+            
+            nSamples = sum(temp_nSamples);
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            
+            
+
+            
+%             for iOcc = 1:nOcc
+%                 % Progress bar
+%                 bst_progress('set', progressPos + round(iOcc / nOcc * 50));
+%                 % Simple event: read a time window around the marker
+%                 if ~isExtended
+%                     SamplesBounds = round(events(iEvt).times(1,iOcc) .* sFile.prop.sfreq) + evtSmpRange;
+%                 % Extended event: read the full event
+%                 else
+%                     SamplesBounds = round(events(iEvt).times(:,iOcc)' .* sFile.prop.sfreq) + evtSmpRange;
+%                 end
+%                 % Check that this epoch is within the segment of file to consider
+%                 TimeBounds = SamplesBounds ./ sFile.prop.sfreq;
+%                 if ~isempty(TimeWindow) && ((TimeBounds(1) < TimeWindow(1)) || (TimeBounds(2) > TimeWindow(2)))
+%                     continue;
+%                 end
+%                 % Check if this segment is outside of ALL the bad segments (either entirely before or entirely after)
+%                 if isIgnoreBad && ~isempty(badSeg) && (~all((SamplesBounds(2) < badSeg(1,:)) | (SamplesBounds(1) > badSeg(2,:))))
+%                     nInfoBad = nInfoBad + 1;
+%                     continue;
+%                 % Check if this this segment is  outside of the file bounds
+%                 elseif (TimeBounds(1) < sFile.prop.times(1)) || (TimeBounds(2) > sFile.prop.times(2)) 
+%                     bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s #%d is too close to the beginning or end of the file: ignored...', evtName, iOcc));
+%                     continue;
+%                 end
+%                 % Read block
+%                 [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
+%                 % SSP_mean: Check that we can get a time zero
+%                 if strcmpi(Method, 'SSP_mean')
+%                     if ((TimeVector(1) > 0) || (TimeVector(end) < 0))
+%                         bst_report('Warning', sProcess, sInputsA(iFile), ['File #"' num2str(iFile) '" does not have a time t=0, it cannot be used for the method "mean".']);
+%                         continue;
+%                     end
+%                     % Get the sample where t=0
+%                     iTimeZero{end+1} = bst_closest(0, TimeVector);
+%                 end
+%                 % Concatenate to final matrix
+%                 F{end+1} = Fevt;
+%                 nSamples = nSamples + size(Fevt,2);
+%                 % Check whether we read already all the samples we need
+%                 if ~isICA && (nSamples >= nMaxSamples)
+%                     bst_report('Info', sProcess, sInputsA(iFile), sprintf('Reached the maximum number of samples at event %d / %d', iOcc, nOcc));
+%                     break;
+%                 end
+%             end
+%             % Display message with number of events ignored
+%             if (nInfoBad > 0)
+%                 bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s: %d/%d events were in bad segments and ignored.', evtName, nInfoBad, nOcc));
+%             end
             
         % === RAW: CONTINUOUS ===
         elseif isRawA && isempty(evtName)
@@ -1091,4 +1107,77 @@ function proj = ConvertOldFormat(OldProj)
         proj = OldProj;
     end
 end
+
+
+
+%% ===== LOAD SEGMENTS AROUND EVENTS IN PARALLEL
+
+function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method)
+
+
+    % Progress bar
+%     bst_progress('set', progressPos + round(iOcc / nOcc * 50));
+    % Simple event: read a time window around the marker
+    if ~isExtended
+        SamplesBounds = round(events(iEvt).times(1,iOcc) .* sFile.prop.sfreq) + evtSmpRange;
+    % Extended event: read the full event
+    else
+        SamplesBounds = round(events(iEvt).times(:,iOcc)' .* sFile.prop.sfreq) + evtSmpRange;
+    end
+    % Check that this epoch is within the segment of file to consider
+    TimeBounds = SamplesBounds ./ sFile.prop.sfreq;
+    if ~isempty(TimeWindow) && ((TimeBounds(1) < TimeWindow(1)) || (TimeBounds(2) > TimeWindow(2)))
+        Fevt = [];
+        nSamples_single = 0;
+        
+        return; % was continue
+    end
+    % Check if this segment is outside of ALL the bad segments (either entirely before or entirely after)
+    if isIgnoreBad && ~isempty(badSeg) && (~all((SamplesBounds(2) < badSeg(1,:)) | (SamplesBounds(1) > badSeg(2,:))))
+        nInfoBad = nInfoBad + 1;
+        Fevt = [];
+        nSamples_single = 0;
+        
+        return; % was continue
+    % Check if this this segment is  outside of the file bounds
+    elseif (TimeBounds(1) < sFile.prop.times(1)) || (TimeBounds(2) > sFile.prop.times(2)) 
+        bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s #%d is too close to the beginning or end of the file: ignored...', evtName, iOcc));
+        Fevt = [];
+        nSamples_single = 0;
+
+        return; % was continue
+    end
+    % Read block
+    [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
+    % SSP_mean: Check that we can get a time zero
+    if strcmpi(Method, 'SSP_mean')
+        if ((TimeVector(1) > 0) || (TimeVector(end) < 0))
+            bst_report('Warning', sProcess, sInputsA(iFile), ['File #"' num2str(iFile) '" does not have a time t=0, it cannot be used for the method "mean".']);
+            return; % was continue
+        end
+        % Get the sample where t=0
+        iTimeZero{end+1} = bst_closest(0, TimeVector);
+    end
+    
+    nSamples_single = size(Fevt,2);
+    
+%     % Concatenate to final matrix
+%     F{end+1} = Fevt;
+%     nSamples = nSamples + size(Fevt,2);
+    % Check whether we read already all the samples we need
+%     if ~isICA && (nSamples >= nMaxSamples)
+%         bst_report('Info', sProcess, sInputsA(iFile), sprintf('Reached the maximum number of samples at event %d / %d', iOcc, nOcc));
+%         break;
+%     end
+
+
+
+end
+
+
+
+
+
+
+
 
