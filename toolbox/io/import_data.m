@@ -173,7 +173,8 @@ for iFile = 1:length(DataFiles)
     bst_progress('start', 'Import MEG/EEG recordings', ['Loading file "' DataFile '"...']);
     % Load file
     if ~isempty(sFile)
-        [ImportedDataMat, ChannelMat, nChannels, nTime, ImportOptions] = in_data(sFile, ChannelMat, FileFormat, ImportOptions, nbCall);
+%         [ImportedDataMat, ChannelMat, nChannels, nTime, ImportOptions] = in_data(sFile, ChannelMat, FileFormat, ImportOptions, nbCall);
+        [ImportedDataMat, ChannelMat, nChannels, nTime, ImportOptions] = in_data_MOTOR_LAB(sFile, ChannelMat, FileFormat, ImportOptions, nbCall);
         % Importing data from a RAW file already in the DB: the re-alignment is already done
         ImportOptions.ChannelReplace = 0;
         ImportOptions.ChannelAlign = 0;

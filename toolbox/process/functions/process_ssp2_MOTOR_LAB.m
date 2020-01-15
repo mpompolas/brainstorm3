@@ -73,7 +73,7 @@ function sProcess = GetDescription()
     sProcess.options.nicacomp.Value   = {0, '', 0};
     sProcess.options.nicacomp.Hidden  = 1;
     % Sensor types
-    sProcess.options.sensortypes.Comment = 'Sensor types or names (empty=all): ';
+    sProcess.options.sensortypes.Comment = 'Sensor types or names or Groups(empty=all): ';
     sProcess.options.sensortypes.Type    = 'text';
     sProcess.options.sensortypes.Value   = 'MEG, EEG';
     % Use existing SSPs
@@ -313,6 +313,54 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
             end
             % Get channels to process
             iChannels = channel_find(ChannelMat.Channel, sProcess.options.sensortypes.Value);
+            
+            
+            %% ADDED FOR DANCAUSE LAB
+            % Check for Group selection
+            
+            target = sProcess.options.sensortypes.Value;
+            if ~iscell(target)
+                if any(target == ',') || any(target == ';')
+                    % Split string based on the commas
+                    target = strtrim(str_split(target, ',;'));
+                else
+                    target = {strtrim(target)};
+                end
+            end
+            
+            
+            DataMat_channelFlag = in_bst_data(sInputsA(iFile).FileName, 'ChannelFlag');
+            if isempty(iChannels)
+                allGroups = upper(unique({ChannelMat.Channel.Group}));
+                % Process all the targets
+                for i = 1:length(target)
+                    % Search by type: return all the channels from this Group
+                    if ismember(upper(strtrim(target{i})), allGroups)
+%                         iChan = good_channel(ChannelMat.Channel, [], target{i});
+                        
+                        iChan = [];
+                        for iChannel = 1:length(ChannelMat.Channel)
+                            % Get only good channels
+                            if strcmp(upper(strtrim(target{i})), upper(strtrim(ChannelMat.Channel(iChannel).Group))) && DataMat_channelFlag.ChannelFlag(iChannel) == 1
+                                iChan = [iChan, iChannel];
+                            end
+                        end                             
+                    end
+                    % Comment
+                    if ~isempty(iChan)
+                        iChannels = [iChannels, iChan];
+%                         if ~isempty(Comment)
+%                             Comment = [Comment, ', '];
+%                         end
+%                         Comment = [Comment, target{i}];
+                    end
+                end
+                % Sort channels indices, and remove duplicates
+                iChannels = unique(iChannels);
+            end
+            
+            
+            %%
             if isempty(iChannels)
                 bst_report('Error', sProcess, sInputsA(iFile), 'No channels to process.');
                 return;
@@ -396,19 +444,28 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
             temp_nSamples = zeros(1,nOcc);
             F = cell(1,nOcc);
             TimeVector_temp = cell(1,nOcc);
-            parfor iOcc = 1:nOcc
-                
-                [Fevt, nSamples_single, TimeVector_single] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method);
-
-                % Concatenate to final matrix
-                F{iOcc} = Fevt;
-                temp_nSamples(iOcc) = nSamples_single;
-                TimeVector_temp{iOcc} = TimeVector_single; % All are the same
-    
-            end
-            TimeVector = TimeVector_temp{1};
             
+            if run_parallel
+                parfor iOcc = 1:nOcc
+                    [Fevt, nSamples_single, TimeVector_single] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, iChannels, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method);
+                    % Concatenate to final matrix
+                    F{iOcc} = Fevt;
+                    temp_nSamples(iOcc) = nSamples_single;
+                    TimeVector_temp{iOcc} = TimeVector_single; % All are the same
+                end
+            else
+                for iOcc = 1:nOcc
+                    [Fevt, nSamples_single, TimeVector_single] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, iChannels, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method);
+                    % Concatenate to final matrix
+                    F{iOcc} = Fevt;
+                    temp_nSamples(iOcc) = nSamples_single;
+                    TimeVector_temp{iOcc} = TimeVector_single; % All are the same
+                end
+            end
+                
+            TimeVector = TimeVector_temp{1};
             nSamples = sum(temp_nSamples);
+            
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             
             
@@ -490,6 +547,9 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
             F{end+1} = zeros(length(ChannelMat.Channel), size(sMat.Data,2));
             F{end}(iRows,:) = sMat.Data;
             TimeVector = sMat.Time;
+            
+            run_parallel = 0; % No need to run downsampling in parallel. There will be only one entry
+            
 
         % === IMPORTED DATA ===
         else
@@ -1112,7 +1172,7 @@ end
 
 %% ===== LOAD SEGMENTS AROUND EVENTS IN PARALLEL
 
-function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method)
+function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, iEvt, isExtended, events, sFile, ChannelMat, iChannels, evtSmpRange, evtName, TimeWindow, nSamples, nMaxSamples, nOcc, isICA, isIgnoreBad, badSeg, nInfoBad, sProcess, sInputsA, ImportOptions, Method)
 
 
     % Progress bar
@@ -1149,6 +1209,7 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
     end
     % Read block
     [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
+%     [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, iChannels, ImportOptions);
     % SSP_mean: Check that we can get a time zero
     if strcmpi(Method, 'SSP_mean')
         if ((TimeVector(1) > 0) || (TimeVector(end) < 0))

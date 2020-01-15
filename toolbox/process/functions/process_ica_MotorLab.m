@@ -25,6 +25,10 @@ function varargout = process_ica_MotorLab( varargin )
 % Authors: Francois Tadel, 2015-2018
 %          Peter Donhauser, 2017
 
+
+% Edited to run in parallel: Konstantinos Nasiotis 2020
+
+
 eval(macro_method);
 end
 
@@ -69,7 +73,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.nicacomp.Type    = 'value';
     sProcess.options.nicacomp.Value   = {20, '', 0};
     % Sensor types
-    sProcess.options.sensortypes.Comment = 'Sensor types or names (empty=all): ';
+    sProcess.options.sensortypes.Comment = 'Sensor types or names or Groups (empty=all): ';
     sProcess.options.sensortypes.Type    = 'text';
     sProcess.options.sensortypes.Value   = 'EEG';
     % Select components
