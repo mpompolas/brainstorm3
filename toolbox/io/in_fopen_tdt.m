@@ -94,17 +94,29 @@ several_sampling_rates = [];
 % Those numbers create problems when loading segments of data.
 % The segment loading is in TimeBounds, not SampleBounds that makes it even
 % worse with those sampling rates
-stream_info = struct;
+stream_info = struct;   
+
+LFP_label_exists = 0;
 
 for iStream = 1:length(all_streams)
     stream_info(iStream).label          = all_streams{iStream};
     stream_info(iStream).fs             = data.streams.(all_streams{iStream}).fs;
     stream_info(iStream).total_channels = size(data.streams.(all_streams{iStream}).data,1);
+    
+    % Brainstorm needs a single sampling rate. I assign the one on the LFPs
+    if strfind(all_streams{iStream},'LFP')
+        general_sampling_rate = data.streams.(all_streams{iStream}).fs;
+        LFP_label_exists = 1;
+    end
 end
 
-% Brainstorm needs a single sampling rate. I assign the maximum
-[general_sampling_rate iHighestSampledChannel] = max([stream_info.fs]);
-
+if ~LFP_label_exists
+    bst_error(['The sampling rate is assumed to be assigned by a stream that contains the label: "LFP".' 10 ...
+               '1. Change the string in the search for the sampling rates before from "LFP" to the label of the stream that your data is saved in.' 10 ...
+               '2. Change the string in the channelMat creation below from "LFP" to the label of the stream that your data is saved in.'])
+           stop
+end
+    
 nChannels = sum([stream_info.total_channels]);
 
  %% ===== CREATE BRAINSTORM SFILE STRUCTURE =====
@@ -212,7 +224,7 @@ end
 bst_progress('start', 'TDT', 'Collecting spiking events...');
 
 disp('Getting spiking events')
-NO_data = TDTbin2mat(DataFolder, 'TYPE', 3); % Just load epocs / events
+NO_data = TDTbin2mat(DataFolder, 'TYPE', 3); % Just load spikes
 
 are_there_spikes = ~isempty(NO_data.snips);
 
@@ -226,7 +238,9 @@ end
 
 
 %%%%%%%%
+disp('***************************************************')
 disp('CHECK THE SPIKES. THEY ARE ONLY ASSIGNED ON RIG TWO')
+disp('***************************************************')
 %%%%%%%%
 
 

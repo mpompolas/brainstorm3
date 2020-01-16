@@ -63,8 +63,11 @@ end
 nChannels = length(selectedChannels);
 nSamples = SamplesBounds(2) - SamplesBounds(1) + 1;
 
-Fs = max([sFile.header.stream_info.fs]);
 
+%% Just get the LFP sampling rate and work on that 
+% This is assigned at the importer
+
+Fs = sFile.prop.sfreq;
 
 %% The importer for TDT, imports based on timeBounds, not samplebounds
 % This is a nightmare when trying to load segments of the same length
@@ -85,9 +88,8 @@ F = zeros(length(selectedChannels), nSamples);
 ii = 1;
 for iStream = 1:length(stream_info)
 
-    % DO THE EXTRAPOLATION HERE FOR THE LOW SAMPLED SIGNALS (EYE TRACES, ARM MOVEMENTS ETC.)
-    if ceil(stream_info(iStream).fs) ~= Fs
-        
+    % DO THE EXTRAPOLATION HERE FOR THE LOW SAMPLED SIGNALS (EYE TRACES ETC.)
+    if stream_info(iStream).fs < Fs
         
         low_sampled_signal = double(data.streams.(stream_info(iStream).label).data);
         
@@ -102,13 +104,28 @@ for iStream = 1:length(stream_info)
             logical_keep(random_points_to_remove) = false;
             temp(iChannel,:) = upsampled_position(logical_keep);
             
-%             %2. INTERPOLLATION
+%             %2. INTERPOLATION
 %             temp(iChannel,:) = interp(double(data.streams.(stream_info(iStream).label).data),round(Fs/stream_info(iStream).fs));
 
         end
         
         
-    else
+    % DROP SAMPLES HERE FOR THE HIGH SAMPLED SIGNALS (LED, EMG ETC.)
+    elseif stream_info(iStream).fs > Fs
+        
+        high_sampled_signal = double(data.streams.(stream_info(iStream).label).data);        
+        
+        nSamplesToDrop =  size(high_sampled_signal,2) - nSamples;
+        
+        keep_these_samples = true(1,size(high_sampled_signal,2));
+        remove_these_samples = round(linspace(1, size(high_sampled_signal,2), nSamplesToDrop));
+        
+        keep_these_samples(remove_these_samples) = false;
+        
+        
+        temp = high_sampled_signal(:,keep_these_samples);
+        
+    elseif stream_info(iStream).fs == Fs
         temp = double(data.streams.(stream_info(iStream).label).data);
     end
 
