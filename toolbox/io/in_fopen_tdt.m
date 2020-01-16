@@ -191,7 +191,7 @@ if are_there_events
             events(iindex).label      = NO_data.epocs.(all_event_Labels{iEvent}).name;
             events(iindex).color      = rand(1,3);
             events(iindex).epochs     = ones(1,length(NO_data.epocs.(all_event_Labels{iEvent}).onset))  ;
-            events(iindex).times      = round(NO_data.epocs.(all_event_Labels{iEvent}).onset' .* general_sampling_rate) ./ general_sampling_rate;
+            events(iindex).times      = NO_data.epocs.(all_event_Labels{iEvent}).onset';
             events(iindex).reactTimes = [];
             events(iindex).select     = 1;
             events(iindex).channels   = cell(1, size(events(iindex).times, 2));
@@ -208,7 +208,7 @@ if are_there_events
                 events(iindex).label      = [NO_data.epocs.(all_event_Labels{iEvent}).name num2str(conditions_in_event(iCondition))];
                 events(iindex).color      = rand(1,3);
                 events(iindex).epochs     = ones(1,length(selected_Events_for_condition))  ;
-                events(iindex).times      = round(NO_data.epocs.(all_event_Labels{iEvent}).onset(selected_Events_for_condition)' .* general_sampling_rate) ./ general_sampling_rate;
+                events(iindex).times      = NO_data.epocs.(all_event_Labels{iEvent}).onset(selected_Events_for_condition)';
                 events(iindex).reactTimes = [];
                 events(iindex).select     = 1;
                 events(iindex).channels   = cell(1, size(events(iindex).times, 2));
