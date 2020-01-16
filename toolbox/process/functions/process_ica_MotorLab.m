@@ -38,8 +38,8 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Description the process
     sProcess.Comment     = 'ICA components - Parallel';
     sProcess.Category    = 'Custom';
-    sProcess.SubGroup    = 'Dancause Lab';
-    sProcess.Index       = 1801;
+    sProcess.SubGroup    = {'Dancause Lab', 'Artifacts'};
+    sProcess.Index       = 1811;
     sProcess.Description = 'https://neuroimage.usc.edu/brainstorm/Tutorials/ICA';
     % Definition of the input accepted by this process
     sProcess.InputTypes  = {'raw'};
