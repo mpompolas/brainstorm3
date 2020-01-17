@@ -66,6 +66,10 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.threshold.Comment = 'Amplitude threshold: ';
     sProcess.options.threshold.Type    = 'value';
     sProcess.options.threshold.Value   = {1, ' std', 2};
+    % Threshold
+    sProcess.options.threshold_width.Comment = 'Width threshold: ';
+    sProcess.options.threshold_width.Type    = 'value';
+    sProcess.options.threshold_width.Value   = {100, ' ms', []};
     % Blanking period
     sProcess.options.blanking.Comment = 'Min duration between two events: ';
     sProcess.options.blanking.Type    = 'value';
@@ -95,8 +99,9 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     isIgnoreBad = 1;
     % Prepare options structure for the detection function
     OPTIONS = Compute();
-    OPTIONS.threshold    = sProcess.options.threshold.Value{1};
-    OPTIONS.blanking     = sProcess.options.blanking.Value{1};
+    OPTIONS.threshold       = sProcess.options.threshold.Value{1};
+    OPTIONS.blanking        = sProcess.options.blanking.Value{1};
+    OPTIONS.threshold_width = sProcess.options.threshold_width.Value{1};
     if isfield(sProcess.options,'maxcross')
         OPTIONS.maxcross   = sProcess.options.maxcross.Value;
     end
@@ -306,14 +311,19 @@ function evt = Compute(F, TimeVector, OPTIONS, Fmask)
     OPTIONS.bandpass = [0.1 40];
     [b,a] = butter(2, [OPTIONS.bandpass(1) OPTIONS.bandpass(2)]./(sFreq/2),'bandpass');
     F_filtered = filtfilt(b,a,F')';
+    
+    F_filtered = F;
 
     evt = cell(1,size(F_filtered,1));
     
     for iChannel = 1:size(F_filtered,1)
-        [maximum_force, evt{iChannel}] = findpeaks(abs(F_filtered(iChannel,:)),'MinPeakHeight',OPTIONS.threshold*std(abs(F_filtered(iChannel,:))),'MinPeakDistance',sFreq*OPTIONS.blanking);
+        [maximum_force, evt{iChannel}] = findpeaks(abs(F_filtered(iChannel,:)),'MinPeakHeight', OPTIONS.threshold*std(abs(F_filtered(iChannel,:))),...
+                                                                               'MinPeakDistance', round(sFreq*OPTIONS.blanking),...
+                                                                               'MinPeakWidth', round(sFreq*OPTIONS.threshold_width/1000));
 %         evt{iChannel} = event_maximum_force/sFreq + TimeVector(1);
     end
-        
+       
+    
     for iChannel = 1:size(F,1)
         figure(iChannel); plot(TimeVector(1:end),F(iChannel,:))
         hold on; title 'Event maximum force';
