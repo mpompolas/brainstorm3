@@ -77,7 +77,20 @@ for iChannel = 1:nChannels
     else
         % Get the additional/behavioral channels
         if ~isempty(sFile.header.allBehaviorKeys)
-            position_timestamps =  nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{selectedChannels(iChannel),1}).spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),2}).timestamps.load; % I use only the first subkey - subkeys should have the same timestamps
+            position_timestamps = nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{selectedChannels(iChannel),1}).spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),2}).timestamps.load; % I use only the first subkey - subkeys should have the same timestamps
+            
+            position_timestamps = position_timestamps./1000; % For some reason in Buffalo v2.0 the times are in ms.
+            starting_timestamp  = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get('ElectricalSeries').starting_time;
+            position_timestamps = position_timestamps - starting_timestamp;
+            
+% %%%%
+%             starting_timestamp = nwb2.acquisition.get('Position').spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),1}).starting_time;
+%             behavioral_rate    = nwb2.acquisition.get('Position').spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),1}).starting_time_rate;
+%             ending_timestamp   = nwb2.acquisition.get('Position').spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),1}).data.dims/behavioral_rate;
+%             
+%             position_timestamps = starting_timestamp:1/behavioral_rate:ending_timestamp;            
+% %%%%
+
             % Get the indices of the samples that are within the time-selection
             selected_timestamps = find(position_timestamps>timeBounds(1) & position_timestamps<timeBounds(2));
 
@@ -93,13 +106,13 @@ for iChannel = 1:nChannels
                 % they need to be upsampled
                 % Moreover, there are multiple channels within each
                 % Behavioral description                
-                iAdditionalChannel = find(find(strcmp(allBehaviorKeys(:,2), allBehaviorKeys{selectedChannels(iChannel),2}))==selectedChannels(iChannel)); % This gives the index of the channel selected with the behavior channels
-                
-                temp = nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{selectedChannels(iChannel),1}).spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),2}).data.load([iAdditionalChannel, selected_timestamps_bounds(1)], [iAdditionalChannel, selected_timestamps_bounds(2)]);
+
+                temp = nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{selectedChannels(iChannel),1}).spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),2}).data.load([allBehaviorKeys{selectedChannels(iChannel),3}, selected_timestamps_bounds(1)], [allBehaviorKeys{selectedChannels(iChannel),3}, selected_timestamps_bounds(2)]);
+%                 temp = nwb2.acquisition.get('Position').spatialseries.get(allBehaviorKeys{selectedChannels(iChannel),1}).data.load([selected_timestamps_bounds(1)], [selected_timestamps_bounds(2)]);
                 temp = temp(~isnan(temp)); % Some entries might be NaNs
                 if ~isempty(temp)
                     % Upsampling the lower sampled behavioral signals
-                    upsampled_position = interp(temp,ceil(nSamples/length(temp)));
+                    upsampled_position = repelem(temp,ceil(nSamples/length(temp)));
                     logical_keep = true(1,length(upsampled_position));
                     random_points_to_remove = randperm(length(upsampled_position),length(upsampled_position)-nSamples);
                     logical_keep(random_points_to_remove) = false;

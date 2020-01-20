@@ -713,7 +713,11 @@ function [bstPanelNew, panelName] = CreatePanel(sFile, ChannelMat) %#ok<DEFNU>
         isExtended = false(1,nbEvents);
         for i = 1:nbEvents
             % Extended/simple event
-            isExtended(i) = (size(sFile.events(i).times, 1) == 2);
+            if strfind(sFile.events(i).label, 'Spikes Channel')
+                isExtended(i) = false;
+            else
+                isExtended(i) = (size(sFile.events(i).times, 1) == 2);
+            end
             % If selection by epoch
             if isEpochs
                 % Get selected epochs
@@ -726,8 +730,12 @@ function [bstPanelNew, panelName] = CreatePanel(sFile, ChannelMat) %#ok<DEFNU>
                 iSelSmp = find(ismember([sFile.events(i).epochs], iSelEpo));
             % Else: selection by time windows
             else
-                % Get all the occurrences of this event
-                iSamples = round(sFile.events(i).times .* sFile.prop.sfreq);
+                if strfind(sFile.events(i).label, 'Spikes Channel')
+                    iSamples = [];
+                else
+                    % Get all the occurrences of this event
+                    iSamples = round(sFile.events(i).times .* sFile.prop.sfreq);
+                end
                 % Keep only the occurrences within the time bounds
                 if isempty(iSamples)
                     iSelSmp = [];

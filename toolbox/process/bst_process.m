@@ -1207,42 +1207,15 @@ end
 
 %% ===== PROCESS: STAT =====
 function OutputFiles = ProcessStat(sProcess, sInputA, sInputB)
-%     % Check inputs
-%     if ~isempty(strfind(GetFileTag(sInputA(1).FileName), 'connect'))
-%         bst_report('Warning', sProcess, sInputA, 'Statistical tests on connectivity results are not supported yet.');
-%     end
-    
     % ===== GET OUTPUT STUDY =====
     % Display progress bar
     bst_progress('text', 'Saving results...');
     % Get number of subjects that are involved
     isStat1 = strcmpi(sProcess.Category, 'Stat1') || isempty(sInputB);
     if isStat1
-        uniqueSubjectName = unique({sInputA.SubjectFile});
-        uniqueStudy       = unique([sInputA.iStudy]);
+        [sStudy, iStudy] = GetOutputStudy(sProcess, sInputA);
     else
-        uniqueSubjectName = unique([{sInputA.SubjectFile}, {sInputB.SubjectFile}]);
-        uniqueStudy       = unique([sInputA.iStudy, sInputB.iStudy]);
-    end
-    % If all files share same study: save in it
-    if (length(uniqueStudy) == 1)
-        [sStudy, iStudy] = bst_get('Study', uniqueStudy);
-    % If all files share the same subject: save in intra-analysis
-    elseif (length(uniqueSubjectName) == 1)
-        % Get subject
-        [sSubject, iSubject] = bst_get('Subject', uniqueSubjectName{1});
-        % Get intra-subjet analysis study for this subject
-        [sStudy, iStudy] = bst_get('AnalysisIntraStudy', iSubject);
-    else
-        % Get group analysis subject
-        [sSubject, iSubject] = bst_get('NormalizedSubject');
-        % Get intra-subject study for the group subject
-        [sStudy, iStudy] = bst_get('AnalysisIntraStudy', iSubject);        
-        % Error
-        if isempty(sStudy)
-            error(['Could not find folder "Group_analysis/@intra". Delete and create the group analysis subject again.' 10 ...
-                   'If this error happens multiple times, please report it on the user forum.']);
-        end
+        [sStudy, iStudy] = GetOutputStudy(sProcess, [sInputA, sInputB]);
     end
     % Error
     if isempty(sStudy)
@@ -1268,13 +1241,19 @@ function OutputFiles = ProcessStat(sProcess, sInputA, sInputB)
     if isempty(sOutput.Type)
         sOutput.Type = sInputA(1).FileType;
     end
+    % Get process comment
+    try
+        processComment = sProcess.Function('FormatComment', sProcess);
+    catch
+        processComment = sProcess.Comment;
+    end
     % Comment: forced in the options
     if isfield(sProcess.options, 'Comment') && isfield(sProcess.options.Comment, 'Value') && ~isempty(sProcess.options.Comment.Value)
         sOutput.Comment = sProcess.options.Comment.Value;
     % Regular comment
     else
         if isempty(sOutput.Comment)
-            sOutput.Comment = sProcess.Function('FormatComment', sProcess);
+            sOutput.Comment = processComment;
             % Remove additional comments (separated with more than two spaces)
             iExtra = strfind(sOutput.Comment, '  ');
             if ~isempty(iExtra)
@@ -1318,7 +1297,7 @@ function OutputFiles = ProcessStat(sProcess, sInputA, sInputB)
     end
     % History
     sOutput = bst_history('add', sOutput, 'stat', sProcess.Comment);
-    sOutput = bst_history('add', sOutput, 'stat', [func2str(sProcess.Function) ': ' sProcess.Function('FormatComment', sProcess)]);
+    sOutput = bst_history('add', sOutput, 'stat', [func2str(sProcess.Function) ': ' processComment]);
     % History: List files A
     sOutput = bst_history('add', sOutput, 'stat', 'List of files in group A:');
     for i = 1:length(sInputA)
@@ -1589,6 +1568,8 @@ function [sStudy, iStudy, Comment, uniqueDataFile] = GetOutputStudy(sProcess, sI
     elseif (length(uniqueCond) == 1)
         % Get group analysis subject
         [sSubject, iSubject] = bst_get('NormalizedSubject');
+        % Remove the RAW tag if present
+        uniqueCond{1} = strrep(uniqueCond{1}, '@raw', '');
         % Try to get condition
         [sStudy, iStudy] = bst_get('StudyWithCondition', bst_fullfile(sSubject.Name, uniqueCond{1}));
         % Condition does not exist: Create new condition
@@ -2332,7 +2313,9 @@ function [sFileOut, errMsg] = CreateRawOut(sFileIn, RawFileOut, ImportOptions, i
                 end
             end
             % Delete epochs description
-            sFileOut.epochs = [];
+            if ~isempty(sFileOut) && isfield(sFileOut, 'epochs')
+                sFileOut.epochs = [];
+            end
             
         otherwise
             errMsg = 'Unsupported file format (only continuous FIF and CTF files can be processed).';
@@ -2452,6 +2435,120 @@ function sProcesses = OptimizePipelineRevert(sProcesses) %#ok<DEFNU>
     % Add to process list
     sProcesses = [sProcesses(1:iImport), sProcAdd, sProcesses(iImport+1:end)];
 end
+
+
+%% ===== SAVE RAW FILE =====
+function [MatFile, errMsg] = SaveRawFile(sFileIn, ChannelMat, studyPath, DateOfStudy, Comment, History) %#ok<DEFNU>
+    % Parse inputs
+    if (nargin < 4) || isempty(DateOfStudy)
+        DateOfStudy = [];
+    end
+    if (nargin < 5) || isempty(Comment)
+        Comment = 'Link to raw file';
+    end
+    if (nargin < 6) || isempty(History)
+        History = [];
+    end
+    % Initialize returned variables
+    MatFile = [];
+    errMsg = '';
+    
+    % ===== OUTPUT FOLDER =====
+    % Get new condition name
+    [subjPath, ConditionName] = bst_fileparts(studyPath, 1);
+    [tmp, SubjectName] = bst_fileparts(subjPath, 1);
+    % Create output condition
+    iOutputStudy = db_add_condition(SubjectName, ConditionName, [], DateOfStudy);
+    if isempty(iOutputStudy)
+        errMsg = ['Output folder could not be created:' 10 newPath];
+        return;
+    end
+    % Get output study
+    sOutputStudy = bst_get('Study', iOutputStudy);
+    
+    % ===== OUTPUT LINK .MAT =====
+    % Output file name derives from the condition name
+    [tmp, rawBaseOut, rawBaseExt] = bst_fileparts(studyPath);
+    rawBaseOut = strrep([rawBaseOut rawBaseExt], '@raw', '');
+    % Full file name
+    MatFile = bst_fullfile(studyPath, ['data_0raw_' rawBaseOut '.mat']);
+
+    % ===== OUTPUT RAW .BST =====
+    % Full output filename
+    RawFileOut = bst_fullfile(studyPath, [rawBaseOut '.bst']);
+    RawFileFormat = 'BST-BIN';
+    % Create an empty Brainstorm-binary file
+    [sFileOut, errMsg] = out_fopen(RawFileOut, RawFileFormat, sFileIn, ChannelMat);
+    % Error processing
+    if isempty(sFileOut)
+        MatFile = [];
+        return;
+    end
+
+    % === COPY FILE CONTENTS ===
+    % Get maximum size of a data block
+    ProcessOptions = bst_get('ProcessOptions');
+    MaxSize = ProcessOptions.MaxBlockSize;
+    % Prepare import options (do not apply any modifier)
+    ImportOptions = db_template('ImportOptions');
+    ImportOptions.ImportMode      = 'Time';
+    ImportOptions.DisplayMessages = 0;
+    ImportOptions.UseCtfComp      = 0;
+    ImportOptions.UseSsp          = 0;
+    ImportOptions.RemoveBaseline  = 'no';
+    iEpoch = 1;
+    % Split in time blocks
+    nChannels = length(ChannelMat.Channel);
+    nTime     = round((sFileOut.prop.times(2) - sFileOut.prop.times(1)) .* sFileOut.prop.sfreq) + 1;
+    BlockSize = max(floor(MaxSize / nChannels), 1);
+    nBlocks   = ceil(nTime / BlockSize);
+    % Loop on blocks
+    for iBlock = 1:nBlocks
+        bst_progress('set', round(100*iBlock/nBlocks));
+        % Indices of columns to process
+        SamplesBounds = round(sFileIn.prop.times(1) * sFileOut.prop.sfreq) + [(iBlock-1)*BlockSize, min(iBlock * BlockSize - 1, nTime - 1)];
+        % Read one channel
+        F = in_fread(sFileIn, ChannelMat, iEpoch, SamplesBounds, [], ImportOptions);
+        % Write block
+        sFileOut = out_fwrite(sFileOut, ChannelMat, iEpoch, SamplesBounds, [], F);
+    end
+
+    % ===== SAVE RAW LINK =====
+    % Build output structure
+    DataMat = db_template('DataMat');
+    DataMat.F           = sFileOut;
+    DataMat.Comment     = Comment;
+    DataMat.ChannelFlag = sFileOut.channelflag;
+    DataMat.Time        = sFileOut.prop.times;
+    DataMat.DataType    = 'raw';
+    DataMat.Device      = sFileOut.device;
+    DataMat.History     = History;
+    % Save raw link to hard drive
+    bst_save(MatFile, DataMat, 'v6');
+    % Register in database
+    db_add_data(iOutputStudy, MatFile, DataMat);
+    % Update tree display
+    panel_protocols('UpdateNode', 'Study', iOutputStudy);
+    
+    % === OUTPUT CHANNE FILE ===
+    % If no default channel file: create new channel file
+    sSubject = bst_get('Subject', SubjectName);
+    if (sSubject.UseDefaultChannel == 0)
+        % Output channel file 
+        ChannelMatOut = ChannelMat;
+        % Mark the projectors as already applied to the file
+        if ~isempty(ChannelMatOut.Projector)
+            for iProj = 1:length(ChannelMatOut.Projector)
+                if (ChannelMatOut.Projector(iProj).Status == 1)
+                    ChannelMatOut.Projector(iProj).Status = 2;
+                end
+            end
+        end
+        db_set_channel(iOutputStudy, ChannelMatOut, 2, 0);
+    end
+end
+
+
 
 
 

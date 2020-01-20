@@ -47,6 +47,13 @@ else
     end
         
     timeBoundsTrials = double([nwb2.intervals_trials.start_time.data.load nwb2.intervals_trials.stop_time.data.load]);
+    
+    
+    disp('-----------------------------------------------------------')
+    disp('HARDCODED FOR BUFFALO V2 FILE')
+    timeBoundsTrials = (timeBoundsTrials./1000) - nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get('ElectricalSeries').starting_time;
+    disp('-----------------------------------------------------------')
+    
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % THIS FIELD MIGHT NOT BE PRESENT ON ALL DATASETS

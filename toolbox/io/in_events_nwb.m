@@ -25,11 +25,12 @@ function events = in_events_nwb(sFile, nwb2, nEpochs, ChannelMat)
 
 % Check if an events field exists in the dataset
 try
-    events_exist = ~isempty(nwb2.stimulus_presentation);
+%     events_exist = ~isempty(nwb2.stimulus_presentation);
+    events_exist = ~isempty(nwb2.acquisition.get('BehavioralEvents').timeseries);
     if ~events_exist
         disp('No events in this .nwb file')
     else
-        all_event_keys = keys(nwb2.stimulus_presentation);
+        all_event_keys = keys(nwb2.acquisition.get('BehavioralEvents').timeseries);
         disp(' ')
         disp('The following event types are present in this dataset')
         disp('------------------------------------------------')
@@ -39,8 +40,18 @@ try
         disp(' ')
     end
 catch
-    disp('No events in this .nwb file')
-    return
+    try 
+    	all_event_keys = keys(nwb2.stimulus_presentation);
+        if ~isempty(all_event_keys)
+            events_exist = 1;
+        else
+            events_exist = 0;
+        end
+    catch
+        disp('No events in this .nwb file')
+        events = [];
+        return
+    end
 end
 
 
@@ -51,7 +62,8 @@ if events_exist
     for iEvent = 1:length(all_event_keys)
         events(iEvent).label    = all_event_keys{iEvent};
         events(iEvent).color    = rand(1,3);
-        events(iEvent).times    = nwb2.stimulus_presentation.get(all_event_keys{iEvent}).timestamps.load';     
+%         events(iEvent).times    = nwb2.stimulus_presentation.get(all_event_keys{iEvent}).timestamps.load';     
+        events(iEvent).times    = nwb2.acquisition.get('BehavioralEvents').timeseries.get(all_event_keys{iEvent}).timestamps.load';     
         events(iEvent).channels = cell(1, size(events(iEvent).times, 2));
         events(iEvent).notes    = cell(1, size(events(iEvent).times, 2));
         % Check on which epoch each event belongs to
@@ -77,25 +89,72 @@ try
     nNeurons = length(nwb2.units.vectordata.get('max_electrode').data.load);
     SpikesExist = 1;
 catch
-    warning('The format of the spikes (if any are saved) in this .nwb is not compatible with Brainstorm - The field "nwb2.units.vectordata.get("max_electrode")" that assigns spikes to specific electrodes is needed')
-    SpikesExist = 0;
+    
+    try 
+        nNeurons = length(nwb2.units.electrodes_index.data.load);
+        SpikesExist = 1;
+    catch
+        warning('The format of the spikes (if any are saved) in this .nwb is not compatible with Brainstorm - The field "nwb2.units.vectordata.get("max_electrode")" that assigns spikes to specific electrodes is needed')
+        SpikesExist = 0;
+    end
 end
     
 if SpikesExist
-     
-    amp_channel_IDs = nwb2.general_extracellular_ephys_electrodes.vectordata.get('amp_channel').data.load;
-    maxWaveformCh = nwb2.units.vectordata.get('max_electrode').data.load; % The channels on which each Neuron had the maximum amplitude on its waveforms - Assigning each neuron to an electrode
     
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%% HARDCODED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    if ~(strcmp(sFile.filename,'F:\Buffalo\2017_4_27_processed.nwb')) && ~(strcmp(sFile.filename,'F:\Buffalo\2017_4_27_v2_processed.nwb')) 
+        amp_channel_IDs = nwb2.general_extracellular_ephys_electrodes.vectordata.get('amp_channel').data.load;
+        maxWaveformCh = nwb2.units.vectordata.get('max_electrode').data.load; % The channels on which each Neuron had the maximum amplitude on its waveforms - Assigning each neuron to an electrode
+
+    
+    else
+    %%%%%%%%%%%%%%% 2017_4_27_processed
+        amp_channel_IDs = nwb2.general_extracellular_ephys_electrodes.id.data.load;
+        %% Get on which channel each Neuron belongs to  - this is embedded on the Neuron label
+        unitsLabels = nwb2.units.vectordata.get('name').data.load;
+
+        maxWaveformCh = zeros(length(unitsLabels),1);
+        for iNeuron = 1:length(unitsLabels)
+
+            maxWaveformCh(iNeuron) = str2num(unitsLabels{iNeuron}(4:6));
+        end
+    %%%%%%%%%%%%%%%    
+    end
+    
+    %%
     if ~exist('events')
         events_spikes = repmat(db_template('event'), 1, nNeurons);
     end
 
     for iNeuron = 1:nNeurons
-
+        
         if iNeuron == 1
+            
             times = nwb2.units.spike_times.data.load(1:sum(nwb2.units.spike_times_index.data.load(iNeuron)));
+            
+                times = (times - nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get('ElectricalSeries').starting_time);
+            
         else
-            times = nwb2.units.spike_times.data.load(sum(nwb2.units.spike_times_index.data.load(iNeuron-1))+1:sum(nwb2.units.spike_times_index.data.load(iNeuron)));
+            try
+                times = nwb2.units.spike_times.data.load(sum(nwb2.units.spike_times_index.data.load(iNeuron-1))+1:sum(nwb2.units.spike_times_index.data.load(iNeuron)));
+                
+                    times = (times - nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get('ElectricalSeries').starting_time);
+
+            catch
+                
+                % I assume here that no spikes were assigned to that
+                % neuron (why is it here then... anyway)
+                if nwb2.units.spike_times_index.data.load(iNeuron-1) == nwb2.units.spike_times_index.data.load(iNeuron)
+                    times = nwb2.units.spike_times.data.load(sum(nwb2.units.spike_times_index.data.load(iNeuron)));
+                    
+                        times = (times - nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get('ElectricalSeries').starting_time);
+
+                end
+            end
+                
+                
         end
         times = times(times~=0);
 
@@ -125,7 +184,9 @@ if SpikesExist
         % Check on which epoch each event belongs to
         if nEpochs > 1
             % Initialize to first epoch - if some events are not within the
-            % epoch bounds, they will stay assigned to the first epoch
+            % epoch bounds, they will stay assigned to the first epoch %
+            % THIS IS PROBLEMATIC. EPOCH 1 HAS EXTRA EVENTS THAT IT
+            % SHOULDN'T
             events_spikes(iNeuron).epochs  = ones(1, length(events_spikes(iNeuron).times));
             
             for iEpoch = 1:nEpochs
@@ -140,7 +201,7 @@ if SpikesExist
     end
         
         
-    if exist('events')
+    if exist('events') == 1
         events = [events events_spikes];
     else
         events = events_spikes;

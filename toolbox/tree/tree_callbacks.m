@@ -815,7 +815,7 @@ switch (lower(action))
                     % For each displayable sensor type, display an item in the "display" submenu
                     for iType = 1:length(DisplayMod)
                         channelTypeDisplay = getChannelTypeDisplay(DisplayMod{iType}, DisplayMod);
-                        if ismember(DisplayMod{iType}, {'EEG','ECOG','SEEG','ECOG+SEEG'}) && (length(bstNodes) == 1)
+                        if ismember(DisplayMod{iType}, {'EEG','ECOG','SEEG','ECOG+SEEG'}) && (length(bstNodes) == 1) && (~isempty(sSubject.iScalp) || ~isempty(sSubject.iInnerSkull) || ~isempty(sSubject.iCortex) || ~isempty(sSubject.iAnatomy))
                             if ~isempty(sSubject.iScalp)
                                 gui_component('MenuItem', jMenuDisplay, [], [channelTypeDisplay '   (Head)'],     IconLoader.ICON_SURFACE_SCALP,  [], @(h,ev)DisplayChannels(bstNodes, DisplayMod{iType}, 'scalp', 1));
                             end
@@ -1258,10 +1258,10 @@ switch (lower(action))
                     AllMod(iEDF) = [];
                 end
                 % Add iEEG when SEEG+ECOG 
-                if all(ismember({'SEEG','ECOG'}, AllMod))
+                if ~isempty(AllMod) && all(ismember({'SEEG','ECOG'}, AllMod))
                     AllMod = cat(2, {'ECOG+SEEG'}, AllMod);
                 end
-                if all(ismember({'SEEG','ECOG'}, DisplayMod))
+                if ~isempty(DisplayMod) && all(ismember({'SEEG','ECOG'}, DisplayMod))
                     DisplayMod = cat(2, {'ECOG+SEEG'}, DisplayMod);
                 end
                 % One data file selected only
@@ -1846,8 +1846,10 @@ switch (lower(action))
                             jPopup.add(jMenuConn1);
                         end
                         % Export to file
-                        jMenuExport = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_timefreq(filenameFull));
-
+                        if strcmpi(nodeType, 'timefreq')
+                            jMenuExport = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_timefreq(filenameFull));
+                        end
+                        
                     % ===== PAC: FULL MAPS =====
                     elseif ~isempty(strfind(filenameRelative, '_pac_fullmaps'))
                         gui_component('MenuItem', jPopup, [], 'DirectPAC maps', IconLoader.ICON_PAC, [], @(h,ev)view_pac(filenameRelative));
@@ -2013,7 +2015,9 @@ switch (lower(action))
                                 end
                         end
                         % Export to file
-                        jMenuExport{1} = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_timefreq(filenameFull));
+                        if strcmpi(nodeType, 'timefreq')
+                            jMenuExport{1} = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_timefreq(filenameFull));
+                        end
                     end
                 end
                 % === STAT CLUSTERS ===
@@ -2181,7 +2185,9 @@ switch (lower(action))
                     end
                 end
                 % Export to file
-                jMenuExport = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_matrix(filenameFull));
+                if strcmpi(nodeType, 'matrix')
+                    jMenuExport = gui_component('MenuItem', [], [], 'Export to file', IconLoader.ICON_SAVE, [], @(h,ev)export_matrix(filenameFull));
+                end
                 
 %% ===== POPUP: MATRIX LIST =====
             case 'matrixlist'
@@ -2813,7 +2819,7 @@ function FileNames = GetAllFilenames(bstNodes, targetType, isExcludeBad, isFullP
     for iNode = 1:length(bstNodes)
         switch char(bstNodes(iNode).getType())
             case 'datalist'
-                [iDepStudies, iDepItems] = tree_dependencies(bstNodes, targetType);
+                [iDepStudies, iDepItems] = tree_dependencies(bstNodes(iNode), targetType);
                 if isequal(iDepStudies, -10)
                     disp('BST> Error in tree_dependencies.');
                     continue;
@@ -2828,7 +2834,7 @@ function FileNames = GetAllFilenames(bstNodes, targetType, isExcludeBad, isFullP
                     end
                 end
             case 'matrixlist'
-                [iDepStudies, iDepItems] = tree_dependencies(bstNodes, targetType);
+                [iDepStudies, iDepItems] = tree_dependencies(bstNodes(iNode), targetType);
                 if isequal(iDepStudies, -10)
                     disp('BST> Error in tree_dependencies.');
                     continue;

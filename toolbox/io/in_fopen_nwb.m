@@ -77,7 +77,7 @@ try
     all_lfp_keys = keys(nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries);
 
     for iKey = 1:length(all_lfp_keys)
-        if ismember(all_lfp_keys{iKey}, {'lfp','bla bla bla'})   %%%%%%%% ADD MORE HERE, DON'T KNOW WHAT THE STANDARD FORMATS ARE
+        if ismember(all_lfp_keys{iKey}, {'lfp','bla bla bla', 'ElectricalSeries'})   %%%%%%%% ADD MORE HERE, DON'T KNOW WHAT THE STANDARD FORMATS ARE
             iLFPDataKey = iKey;
             LFPDataPresent = 1;
             break % Once you find the data don't look for other keys/trouble
@@ -130,7 +130,7 @@ try
         allBehaviorKeys{iBehavior,2} = keys(nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{iBehavior}).spatialseries);
         
         for jBehavior = 1:length(allBehaviorKeys{iBehavior,2})
-            nAdditionalChannels = nAdditionalChannels + nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{iBehavior}).spatialseries.get(allBehaviorKeys{iBehavior,2}(jBehavior)).data.dims(2);
+            nAdditionalChannels = nAdditionalChannels + nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{iBehavior}).spatialseries.get(allBehaviorKeys{iBehavior,2}(jBehavior)).data.dims(1);
         end    
     end
     
@@ -142,8 +142,42 @@ catch
     allBehaviorKeys = [];
 end
     
-
-
+% 
+% try
+%     nwb2.acquisition.get('Position').spatialseries;
+%     
+%     
+%     allBehaviorKeys = keys(nwb2.acquisition.get('Position').spatialseries)';
+%     
+%     
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     % Reject states "channel" - THIS IS HARDCODED - IMPROVE
+%     allBehaviorKeys = allBehaviorKeys(~strcmp(allBehaviorKeys,'states'));
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+% 
+%     behavior_exist_here = ~isempty(allBehaviorKeys);
+%     if ~behavior_exist_here
+%         disp('No behavior in this .nwb file')
+%     else
+%         disp(' ')
+%         disp('The following behavior types are present in this dataset')
+%         disp('------------------------------------------------')
+%         for iBehavior = 1:length(allBehaviorKeys)
+%             disp(allBehaviorKeys{iBehavior})
+%         end
+%         disp(' ')
+%     end
+%     
+%     nAdditionalChannels = length(allBehaviorKeys);
+%     
+%     additionalChannelsPresent = 1;
+% catch
+%     disp('No behavior in this .nwb file')
+%     additionalChannelsPresent = 0;
+%     nAdditionalChannels = 0;
+%     allBehaviorKeys = [];
+% end
 
 
 
@@ -159,23 +193,29 @@ if RawDataPresent
     sFile.header.RawKey = all_raw_keys{iRawDataKey};
     sFile.header.LFPKey = [];
     
-    nChannels = nwb2.acquisition.get(all_raw_keys{iRawDataKey}).data.dims(2);
-    nSamples  = nwb2.acquisition.get(all_raw_keys{iRawDataKey}).data.dims(1);
+    nChannels = nwb2.acquisition.get(all_raw_keys{iRawDataKey}).data.dims(1);
+    nSamples  = nwb2.acquisition.get(all_raw_keys{iRawDataKey}).data.dims(2);
 
 elseif LFPDataPresent
     sFile.prop.sfreq = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).starting_time_rate;
+    
+    if isempty(sFile.prop.sfreq)
+        sFile.prop.sfreq = round(1/mean(diff(nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).timestamps.load)));
+        if isempty(sFile.prop.sfreq)
+            error('No sampling rate is entered in the NWB file')
+        end
+    end
     sFile.header.LFPKey = all_lfp_keys{iLFPDataKey};
     sFile.header.RawKey = [];
     
-    nChannels = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(2);
-    nSamples  = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(1);
+    nChannels = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(1);
+    nSamples  = nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(2);
 
 end
 
 
 %% Check for epochs/trials
 [sFile, nEpochs] = in_trials_nwb(sFile, nwb2);
-
 
 %% ===== CREATE EMPTY CHANNEL FILE =====
 ChannelMat = db_template('channelmat');
@@ -189,7 +229,7 @@ ChannelMat.Channel = repmat(db_template('channeldesc'), [1, nChannels + nAdditio
 amp_channel_IDs = nwb2.general_extracellular_ephys_electrodes.id.data.load;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-group_name      = nwb2.general_extracellular_ephys_electrodes.vectordata.get('group_name').data;
+group_name      = nwb2.general_extracellular_ephys_electrodes.vectordata.get('group_name').data.load;
 
 % Get coordinates and set to 0 if they are not available
 x = nwb2.general_extracellular_ephys_electrodes.vectordata.get('x').data.load'./1000; % NWB saves in m ???
@@ -217,33 +257,54 @@ for iChannel = 1:nChannels
 end
 
 
-if additionalChannelsPresent
+% if additionalChannelsPresent
+%     
+%     iChannel = 0;
+%        
+%     for zChannel = 1:nAdditionalChannels
+%         iChannel = iChannel+1;
+% 
+%         ChannelMat.Channel(nChannels + zChannel).Name    = allBehaviorKeys{zChannel};
+%         ChannelMat.Channel(nChannels + zChannel).Loc     = [0;0;0];
+% 
+%         ChannelMat.Channel(nChannels + zChannel).Group   = allBehaviorKeys{zChannel};
+%         ChannelMat.Channel(nChannels + zChannel).Type    = 'Misc';
+% 
+%         ChannelMat.Channel(nChannels + zChannel).Orient  = [];
+%         ChannelMat.Channel(nChannels + zChannel).Weight  = 1;
+%         ChannelMat.Channel(nChannels + zChannel).Comment = [];
+% 
+%         ChannelType{nChannels + iChannel,1} = allBehaviorKeys{zChannel}; 
+%     end
+% end
     
-    iChannel = 0;
+iChannel = 0;
+if additionalChannelsPresent
     for iBehavior = 1:size(allBehaviorKeys,1)
         
         for jBehavior = 1:size(allBehaviorKeys{iBehavior,2},2)
             
-            for zChannel = 1:nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{iBehavior}).spatialseries.get(allBehaviorKeys{iBehavior,2}(jBehavior)).data.dims(2)
+            for zChannel = 1:nwb2.processing.get('behavior').nwbdatainterface.get(allBehaviorKeys{iBehavior}).spatialseries.get(allBehaviorKeys{iBehavior,2}(jBehavior)).data.dims(1)
                 iChannel = iChannel+1;
 
-                ChannelMat.Channel(nChannels + iChannel).Name    = [allBehaviorKeys{iBehavior,2}{jBehavior} '_' num2str(zChannel)];
+
+%                 ChannelMat.Channel(nChannels + iChannel).Name    = [allBehaviorKeys{iBehavior,2}{jBehavior} '_' num2str(zChannel)];
+                ChannelMat.Channel(nChannels + iChannel).Name    = [allBehaviorKeys{iBehavior,1} '_' num2str(zChannel)];
                 ChannelMat.Channel(nChannels + iChannel).Loc     = [0;0;0];
-
                 ChannelMat.Channel(nChannels + iChannel).Group   = allBehaviorKeys{iBehavior,1};
-                ChannelMat.Channel(nChannels + iChannel).Type    = 'Misc';
-
+                ChannelMat.Channel(nChannels + iChannel).Type    = 'Behavior';
                 ChannelMat.Channel(nChannels + iChannel).Orient  = [];
                 ChannelMat.Channel(nChannels + iChannel).Weight  = 1;
                 ChannelMat.Channel(nChannels + iChannel).Comment = [];
-
                 ChannelType{nChannels + iChannel,1} = allBehaviorKeys{iBehavior,1}; 
                 ChannelType{nChannels + iChannel,2} = allBehaviorKeys{iBehavior,2}{jBehavior};
+                ChannelType{nChannels + iChannel,3} = zChannel; % I use this on in_fread_nwb
             end
         end
     end
 end
-    
+
+
     
 
 
@@ -253,7 +314,7 @@ sFile.filename     = DataFile;
 sFile.device       = 'NWB'; %nwb2.general_devices.get('implant');   % THIS WAS NOT SET ON THE EXAMPLE DATASET
 sFile.header.nwb   = nwb2;
 sFile.comment      = nwb2.identifier;
-sFile.prop.times   = [0, nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(1) - 1] ./ sFile.prop.sfreq;
+sFile.prop.times   = [0, nwb2.processing.get('ecephys').nwbdatainterface.get('LFP').electricalseries.get(all_lfp_keys{iLFPDataKey}).data.dims(2) - 1] ./ sFile.prop.sfreq;
 sFile.prop.nAvg    = 1;
 % No info on bad channels
 sFile.channelflag  = ones(nChannels + nAdditionalChannels, 1);
@@ -283,7 +344,16 @@ function downloadNWB()
     %% Download and extract the necessary files
     NWBDir = bst_fullfile(bst_get('BrainstormUserDir'), 'NWB');
     NWBTmpDir = bst_fullfile(bst_get('BrainstormUserDir'), 'NWB_tmp');
-    url = 'https://github.com/NeurodataWithoutBorders/matnwb/archive/master.zip';
+%     url = 'https://github.com/NeurodataWithoutBorders/matnwb/archive/master.zip';
+    url = 'https://github.com/NeurodataWithoutBorders/matnwb/archive/todo/update-schema.zip';
+    
+    disp('------------------------------------------------------------')
+    disp('------------------------------------------------------------')
+    disp('THIS IS THE TEMPORARY REPO - UPDATE TO THE MASTER ONCE READY')
+    disp('------------------------------------------------------------')
+    disp('------------------------------------------------------------')
+
+    
     % If folders exists: delete
     if isdir(NWBDir)
         file_delete(NWBDir, 1, 3);
