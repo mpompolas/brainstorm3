@@ -21,6 +21,7 @@ function should_I_run = update_monitoring_files_txt(iFile, currentJobIdentifier,
         fileName =([fullfile(folder,['temp_' currentJobIdentifier]) filesep fileTypes{file_to_update} num2str(iFile)]);
         fileID = fopen(fileName,'w');
         fwrite(fileID,1);
+        fclose(fileID);
         should_I_run = true;
     end
     

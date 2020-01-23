@@ -1,13 +1,4 @@
-function update_log(folder, user, script_name, priority, started_finished)
-% 
-% 
-% 
-%                  folder = [filesep fullfile('Users','Mpompolas','Desktop','testparallel')]
-%                  user = 'nas'
-%                  script_name = 'asdfasg'
-%                  priority = 1
-%                  started_finished = 1
-
+function update_log(folder, user, currentJobIdentifier, priority, started_finished)
 
 %% Check if the excel sheet that keeps the logs exists
 filename = 'job_monitor.xlsx';
@@ -20,12 +11,12 @@ file_exists = ismember({all_files.name}, filename);
 
 % If not create a new one
 if ~any(file_exists)
-    User         = {user};
-    Script_Name  = {script_name};
-    Priority     = {priority};
-    Job_Started  = {''};
-    Job_Finished = {''};
-    finalTable = table(User,Script_Name,Priority,Job_Started, Job_Finished);
+    User            = {user};
+    Job_Identifier  = {currentJobIdentifier};
+    Priority        = {priority};
+    Job_Started     = {''};
+    Job_Finished    = {''};
+    finalTable      = table(User,Job_Identifier,Priority,Job_Started, Job_Finished);
     
     writetable(finalTable,filename_full,'Sheet',1,'Range','A1');
     update_log(folder, user, script_name, priority, started_finished)
@@ -54,7 +45,7 @@ thestruct = table2struct(temp);
 
 %% Add a new unique entry or append the finished time on an existing one
 
-iEntry = find(ismember({thestruct.User}, user) & ismember({thestruct.Script_Name}, script_name) & ismember([thestruct.Priority], priority));
+iEntry = find(ismember({thestruct.User}, user) & ismember({thestruct.Job_Identifier}, script_name) & ismember([thestruct.Priority], priority));
 
 if ~isempty(iEntry)
     if started_finished == 1
@@ -76,13 +67,13 @@ end
 %% Save structure to excel
 theCell = squeeze(struct2cell(thestruct));
 
-User         = {theCell{1,:}}';
-Script_Name  = {theCell{2,:}}';
-Priority     = {theCell{3,:}}';
-Job_Started  = {theCell{4,:}}';
-Job_Finished = {theCell{5,:}}';
+User           = {theCell{1,:}}';
+Job_Identifier = {theCell{2,:}}';
+Priority       = {theCell{3,:}}';
+Job_Started    = {theCell{4,:}}';
+Job_Finished   = {theCell{5,:}}';
 
-finalTable = table(User,Script_Name,Priority,Job_Started, Job_Finished);
+finalTable = table(User,Job_Identifier,Priority,Job_Started, Job_Finished);
 
 % Save excel
 keep_trying = true;
@@ -90,8 +81,8 @@ while keep_trying
     fileID = fopen(filename_full);
     if fileID ~=-1
         try
-            writetable(finalTable,filename_full,'Sheet',1,'Range','A1');
             fclose(fileID);
+            writetable(finalTable,filename_full,'Sheet',1,'Range','A1');
             disp('Just wrote in the excel')
             keep_trying = false;
         catch
