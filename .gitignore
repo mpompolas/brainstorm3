@@ -1,3 +1,6 @@
 
 *.asv
 *.m~
+.DS_Store
+toolbox/process/.DS_Store
+toolbox/process/.DS_Store
