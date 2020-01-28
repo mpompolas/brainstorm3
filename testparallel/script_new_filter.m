@@ -4,8 +4,8 @@ user = 'Konstantinos';
 priority = 14;
 
 %% This should be set forever - Don't change
-folder = '/Users/Mpompolas/Documents/GitHub/brainstorm3/testparallel';
-% folder = 'Z:\Parallel processing monitor';
+% folder = '/Users/Mpompolas/Documents/GitHub/brainstorm3/testparallel';
+folder = '\\dancnserv\Video 1\Parallel processing monitor';
 
 %% Start of the code
 JobIdentifier = [user '_' mfilename '_' num2str(priority)];
