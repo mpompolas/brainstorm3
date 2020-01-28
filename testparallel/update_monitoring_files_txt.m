@@ -45,7 +45,7 @@ function check_if_priority_is_highest(priority, folder, folder_job_specific, fil
                 pause(5);
                 disp(['I am ' folder_job_specific])
                 disp(['I am waiting for ' all_folders(iFolder).name ' to finish!'])
-                check_if_priority_is_highest(priority, folder, folder_job_specific)
+                check_if_priority_is_highest(priority, folder, folder_job_specific, file_to_update)
             elseif priority == other_file_priority
                 msgbox('There is already a job running with the same priority value. Change the value: 1 = High priority, >1 = lower priority','Priority value','error');
                 error('There is already a job running with the same priority');
