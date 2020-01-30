@@ -160,6 +160,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             SamplesBounds = round(sFile.prop.times(1)*sFile.prop.sfreq) + bst_closest(TimeWindow, DataMat.Time) - 1;
         else
             SamplesBounds = [];
+            TimeWindow = sFile.prop.times;
         end
         [F, TimeVector] = in_fread(sFile, ChannelMat, 1, SamplesBounds, iChannels);
         % Apply weights if reading multiple channels
@@ -324,11 +325,11 @@ function evt = Compute(F, TimeVector, OPTIONS, Fmask)
     end
        
     
-    for iChannel = 1:size(F,1)
-        figure(iChannel); plot(TimeVector(1:end),F(iChannel,:))
-        hold on; title 'Event maximum force';
-        plot(TimeVector(evt{iChannel}),F(iChannel,evt{iChannel}),'r*'); hold off
-    end
+%     for iChannel = 1:size(F,1)
+%         figure(iChannel); plot(TimeVector(1:end),F(iChannel,:))
+%         hold on; title 'Event maximum force';
+%         plot(TimeVector(evt{iChannel}),F(iChannel,evt{iChannel}),'r*'); hold off
+%     end
 
 end
 

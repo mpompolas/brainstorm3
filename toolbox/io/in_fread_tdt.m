@@ -51,6 +51,12 @@ function F = in_fread_tdt(sFile, SamplesBounds, selectedChannels)
 %
 % Author: Konstantinos Nasiotis 2019, 2020
 
+if ~isempty(selectedChannels)
+    warning ('Only a few channels were selected. This functions was modified to accomodate PROCESS_ICA and Force Event detection.')
+    warning ('If you see this warning without performing either of these process you will probably encounter an error')
+end
+    
+
 
  % Parse inputs
 if (nargin < 3) || isempty(selectedChannels)
