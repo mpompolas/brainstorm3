@@ -353,6 +353,8 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
 %                             Comment = [Comment, ', '];
 %                         end
 %                         Comment = [Comment, target{i}];
+                    else
+                        bst_error('No channels were selected. Make sure that the Group name is spelled properly. Also make sure that not ALL channels in that bank are marked as BAD')
                     end
                 end
                 % Sort channels indices, and remove duplicates
@@ -888,9 +890,9 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
     strMod = strMod(1:end-1);
     % Comment
     if ~isempty(evtName)
-        proj.Comment = [evtName ': ' Method ', ' strMod ', ' datestr(clock)];
+        proj.Comment = [target{1} ' : ' evtName ': ' Method ', ' strMod ', ' datestr(clock)];
     else
-        proj.Comment = [Method ': ' strMod  ', ' datestr(clock)];
+        proj.Comment = [target{1} ' : ' Method ': ' strMod  ', ' datestr(clock)];
     end
     
     
