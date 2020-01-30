@@ -93,11 +93,11 @@ else
     ii = 0;
     for iStream = 1:length(stream_info)
         
-        if any(ismember(stream_info(iStream).channelIndices, [selectedChannels 166]))
+        if any(ismember(stream_info(iStream).channelIndices, [selectedChannels]))
             ii = ii+1;
             iSelectedStreams = [iSelectedStreams iStream];
             disp(['Will load Stream: ' stream_info(iStream).label])
-            selected_channels_from_stream{ii}= find(ismember(stream_info(iStream).channelIndices, [selectedChannels 166]));
+            selected_channels_from_stream{ii}= find(ismember(stream_info(iStream).channelIndices, [selectedChannels]));
 
             streams_needed = [streams_needed iStream];
         end
