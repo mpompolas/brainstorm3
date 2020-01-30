@@ -87,8 +87,6 @@ all_streams = fieldnames(data.streams);
 
 all_streams = all_streams(~ismember(all_streams,{'pNe1','pNe2','pNe3','pNe4','SynC'}));
 
-several_sampling_rates = [];
-
 % The sampling rates present are the weirdest numbers I have ever seen:
 % e.g. Fs = 3051.7578125 Hz !!!
 % Those numbers create problems when loading segments of data.
@@ -98,13 +96,21 @@ stream_info = struct;
 
 LFP_label_exists = 0;
 
+
+ii = 1;
 for iStream = 1:length(all_streams)
     stream_info(iStream).label          = all_streams{iStream};
     stream_info(iStream).fs             = data.streams.(all_streams{iStream}).fs;
     stream_info(iStream).total_channels = size(data.streams.(all_streams{iStream}).data,1);
+    stream_info(iStream).channelIndices = ii:ii+size(data.streams.(all_streams{iStream}).data,1)-1;
+    
+    ii = ii + size(data.streams.(all_streams{iStream}).data,1);
+
     
     % Brainstorm needs a single sampling rate. I assign the one on the LFPs
-    if strfind(all_streams{iStream},'LFP')
+    
+    theLFPlabel = 'LFP';
+    if strfind(all_streams{iStream},theLFPlabel)
         general_sampling_rate = data.streams.(all_streams{iStream}).fs;
         LFP_label_exists = 1;
     end
@@ -156,7 +162,7 @@ for iStream = 1:length(all_streams)
 
          ChannelMat.Channel(ii).Group   = all_streams{iStream};
          
-         if strfind(stream_info(iStream).label,'LFP')
+         if strfind(stream_info(iStream).label, theLFPlabel)
             ChannelMat.Channel(ii).Type = 'EEG'; % Not all are EEGs - NOT SURE WHAT TO PUT HERE - AS A STARTING POINT, I PUT WHATEVER IS ONLY ONE CHANNEL SET IT AS Misc
          else
             ChannelMat.Channel(ii).Type = all_streams{iStream};
@@ -221,19 +227,24 @@ end
     
 %% Check for spike events
 
-bst_progress('start', 'TDT', 'Collecting spiking events...');
 
-disp('Getting spiking events')
-NO_data = TDTbin2mat(DataFolder, 'TYPE', 3); % Just load spikes
+check_for_spikes = 0;
 
-are_there_spikes = ~isempty(NO_data.snips);
 
-if  ~exist ('events','var')
-    events = struct;
-    last_event_index = 0;
+
+
+
+
+
+if check_for_spikes
+    bst_progress('start', 'TDT', 'Collecting spiking events...');
+    disp('Getting spiking events')
+    NO_data = TDTbin2mat(DataFolder, 'TYPE', 3); % Just load spikes
+    are_there_spikes = ~isempty(NO_data.snips);
 else
-    last_event_index = length(events);
+    are_there_spikes = 0;
 end
+
 
 
 
@@ -245,7 +256,16 @@ disp('***************************************************')
 
 
 
+
 if are_there_spikes
+    
+    if  ~exist ('events','var')
+        events = struct;
+        last_event_index = 0;
+    else
+        last_event_index = length(events);
+    end
+    
     all_spike_event_Labels = fieldnames(NO_data.snips);
     channels_are_EEG = find(strcmp({ChannelMat.Channel.Type}, 'EEG'));
 

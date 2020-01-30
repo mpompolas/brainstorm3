@@ -1207,9 +1207,11 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
 
         return; % was continue
     end
+    
+    % DEFINE THE CHANNELS TO BE LOADED WHEN IN_FREAD IS CALLED. THIS WILL SPEED UP THE LOADING
     % Read block
-    [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
-%     [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, iChannels, ImportOptions);
+    [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, iChannels, ImportOptions);
+%     [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
     % SSP_mean: Check that we can get a time zero
     if strcmpi(Method, 'SSP_mean')
         if ((TimeVector(1) > 0) || (TimeVector(end) < 0))

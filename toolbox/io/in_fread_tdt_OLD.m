@@ -1,4 +1,4 @@
-function F = in_fread_tdt(sFile, SamplesBounds, selectedChannels)
+function F = in_fread_tdt_OLD(sFile, SamplesBounds, selectedChannels)
 
 
 
