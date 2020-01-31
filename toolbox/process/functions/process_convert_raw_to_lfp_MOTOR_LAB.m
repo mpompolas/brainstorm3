@@ -99,7 +99,7 @@ function OutputFiles = Run(sProcess, sInputs, method) %#ok<DEFNU>
 
         % Prepare output file
         ProtocolInfo = bst_get('ProtocolInfo');
-        newCondition = [sInput.Condition, '_LFP'];
+        newCondition = [sInput.Condition, '_BST'];
         sMat = in_bst(sInput.FileName, [], 0);
         Fs = 1 / diff(sMat.Time(1:2)); % This is the original sampling rate
         
@@ -140,11 +140,9 @@ function OutputFiles = Run(sProcess, sInputs, method) %#ok<DEFNU>
 
         % Update file
         sFileTemplate.CommentTag     = sprintf('resample(%dHz)', round(NewFreq));
-        sFileTemplate.HistoryComment = sprintf('Filter [%0.1f-%0.1f]Hz - Resample from %0.2f Hz to %0.2f Hz (%s)', filterBounds(1), filterBounds(2), Fs, NewFreq, method);
 
         % Convert events to new sampling rate
         newTimeVector = panel_time('GetRawTimeVector', sFileTemplate);
-        sFileTemplate.events = panel_record('ChangeTimeVector', sFileTemplate.events, Fs, newTimeVector);
 
         %% Create an empty Brainstorm-binary file and assign the correct samples-times
         % The sFileOut is what will be the final 
@@ -157,7 +155,7 @@ function OutputFiles = Run(sProcess, sInputs, method) %#ok<DEFNU>
 
         %% Filter and derive LFP
         LFP = zeros(length(sFiles_temp_mat), length(downsample(sMat.Time,round(Fs/NewFreq)))); % This shouldn't create a memory problem
-        bst_progress('start', 'Dancause Lab', 'Converting RAW signals to LFP...', 0, (sProcess.options.paral.Value == 0) * nChannels);
+        bst_progress('start', 'Dancause Lab', 'Converting RAW signals to BST...', 0, (sProcess.options.paral.Value == 0) * nChannels);
 
         if sProcess.options.paral.Value
             parfor iChannel = 1:nChannels
@@ -180,7 +178,7 @@ function OutputFiles = Run(sProcess, sInputs, method) %#ok<DEFNU>
         % Modify it slightly since this is an LFP raw file
         [sStudy, iStudy] = bst_get('DataFile', RawFile);
         RawMat = load(RawFile);
-        RawMat.Comment = 'Link to LFP file';
+        RawMat.Comment = 'Link to BST file';
         RawNewFile = strrep(RawFile, 'data_0raw', 'data_0lfp');
         bst_save(RawNewFile, RawMat, 'v6');
         OutputFiles{end + 1} = RawNewFile;
