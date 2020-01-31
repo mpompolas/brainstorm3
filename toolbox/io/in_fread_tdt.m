@@ -51,13 +51,6 @@ function F = in_fread_tdt(sFile, SamplesBounds, selectedChannels)
 %
 % Author: Konstantinos Nasiotis 2019, 2020
 
-if ~isempty(selectedChannels)
-    warning ('Only a few channels were selected. This functions was modified to accomodate PROCESS_ICA and Force Event detection.')
-    warning ('If you see this warning without performing either of these process you will probably encounter an error')
-end
-    
-
-
  % Parse inputs
 if (nargin < 3) || isempty(selectedChannels)
     selectedChannels = 1:length(sFile.channelflag);
@@ -113,30 +106,8 @@ else
 end
 
 
-% tic
-% data = TDTbin2mat(sFile.filename, 'TYPE', 4, 'STORE', streams_to_load, 'T1', SamplesBounds(1)/Fs, 'T2', SamplesBounds(2)/Fs);
-% toc
-% 
-% tic
-% for i = 1:length(streams_to_load)
-%     data = TDTbin2mat(sFile.filename, 'TYPE', 4, 'STORE', streams_to_load(i), 'T1', SamplesBounds(1)/Fs, 'T2', SamplesBounds(2)/Fs);
-%     data_new.(streams_to_load{i}) = data.streams;
-% end
-% toc
-
-
-
-% THIS CREATES THE ENTIRE SIGNALS MATRIX AND THOSE THE CHANNELS THAT HAVE
-% NOT BEEN SELECTED ARE SET TO 0.
-% THIS WAS DONE SINCE THE ICA WAS CAUSING PROBLEMS IF THE MATRIX WAS
-% SMALLER
-% THIS IS PROBABLY A BUG IN THE ICA CODE
-
-% FOR THE FINAL IN_FREAD_TDT THAT WILL BE RELEASED CONSIDER INCLUDING THE
-% TRUNCATED MATRIX
-
-
-F = zeros(length(sFile.channelflag), nSamples);
+ii = 1;
+F = zeros(length(selectedChannels), nSamples);
 for iStream = 1:length(streams_to_load)
     
     data = TDTbin2mat(sFile.filename, 'TYPE', 4, 'STORE', streams_to_load{iStream}, 'T1', SamplesBounds(1)/Fs, 'T2', SamplesBounds(2)/Fs);
@@ -187,18 +158,14 @@ for iStream = 1:length(streams_to_load)
     % At the end of the signals' length, since the loading based on time is awful,
     % leave the extra samples as zeros (shouldn't create a problem)
     if nSamples > size(temp,2)
-        F(stream_info(iSelectedStreams(iStream)).channelIndices(selected_channels_from_stream{iStream}),1:size(temp,2)) = temp; clear temp
-%         F(ii : ii + length(selected_channels_from_stream{iStream}) - 1,1:size(temp,2)) = temp; clear temp
+%         F(stream_info(iSelectedStreams(iStream)).channelIndices(selected_channels_from_stream{iStream}),1:size(temp,2)) = temp; clear temp
+        F(ii : ii + length(selected_channels_from_stream{iStream}) - 1,1:size(temp,2)) = temp; clear temp
     else  
-        F(stream_info(iSelectedStreams(iStream)).channelIndices(selected_channels_from_stream{iStream}),:) = temp(:,1:nSamples); clear temp
-%         F(ii : ii + length(selected_channels_from_stream{iStream}) - 1,:) = temp(:,1:nSamples); clear temp
+%         F(stream_info(iSelectedStreams(iStream)).channelIndices(selected_channels_from_stream{iStream}),:) = temp(:,1:nSamples); clear temp
+        F(ii : ii + length(selected_channels_from_stream{iStream}) - 1,:) = temp(:,1:nSamples); clear temp
     end
-%     ii = ii + length(selected_channels_from_stream{iStream});
+     ii = ii + length(selected_channels_from_stream{iStream});
 end
-
-% Lazy selection, Improve
-% F = F(selectedChannels,:);
-      
 
 end
 

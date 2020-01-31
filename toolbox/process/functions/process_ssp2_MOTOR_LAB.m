@@ -79,7 +79,7 @@ function sProcess = GetDescription()
     % Use existing SSPs
     sProcess.options.usessp.Comment = 'Compute using existing SSP/ICA projectors';
     sProcess.options.usessp.Type    = 'checkbox';
-    sProcess.options.usessp.Value   = 1;
+    sProcess.options.usessp.Value   = 0;
     sProcess.options.usessp.InputTypes = {'raw'};
     % Ignore bad segments
     sProcess.options.ignorebad.Comment = 'Ignore bad segments';
@@ -1210,9 +1210,30 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
         return; % was continue
     end
     
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
     % DEFINE THE CHANNELS TO BE LOADED WHEN IN_FREAD IS CALLED. THIS WILL SPEED UP THE LOADING
     % Read block
-    [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, iChannels, ImportOptions);
+    ImportOptions.RemoveBaseline = [];
+    [Fevt_temp, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, iChannels, ImportOptions);
+    ImportOptions.RemoveBaseline = 'all';
+
+    % Remove baseline - THIS IS DONE HERE SO I DON'T HAVE TO CHANGE A BUG
+    % THAT IN_FREAD HAS
+    % Compute baseline - COPIED FROM IN_FREAD
+    blValue = mean(Fevt_temp, 2);
+    % Remove from recordings
+    Fevt_temp = bst_bsxfun(@minus, Fevt_temp, blValue);
+    
+    % THE CODE BELOW ONLY WORKS IF THE F FILE LOADED IS FULL (SAME NUMBER OF ROWS AS CHANNELS)
+    % SO ALTHOUGH I LOAD ONLY SPECIFIC CHANNELS, I CREATE A MATRIX THAT IS FULL 
+    Fevt = zeros(length(ChannelMat.Channel), size(Fevt_temp,2)); 
+    Fevt(iChannels,:) = Fevt_temp;
+    
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
 %     [Fevt, TimeVector] = in_fread(sFile, ChannelMat, events(iEvt).epochs(iOcc), SamplesBounds, [], ImportOptions);
     % SSP_mean: Check that we can get a time zero
     if strcmpi(Method, 'SSP_mean')

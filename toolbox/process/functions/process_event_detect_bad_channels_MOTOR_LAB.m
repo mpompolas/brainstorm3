@@ -1,4 +1,4 @@
-function varargout = process_event_detect_maximum_force_MOTOR_LAB( varargin )
+function varargout = process_event_detect_bad_channels_MOTOR_LAB( varargin )
 %
 % USAGE:  OutputFiles = process_evt_detect('Run', sProcess, sInputs)
 %                 evt = process_evt_detect('Compute', F, TimeVector, OPTIONS, Fmask)
@@ -33,7 +33,7 @@ end
 %% ===== GET DESCRIPTION =====
 function sProcess = GetDescription() %#ok<DEFNU>
     % Description the process
-    sProcess.Comment     = 'Detect maximum force events from a single channel';
+    sProcess.Comment     = 'Detect Noisy Channels';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = {'Dancause Lab', 'Events'};
     sProcess.Index       = 1880;
@@ -51,30 +51,18 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Event name
     sProcess.options.eventname.Comment = 'Event name: ';
     sProcess.options.eventname.Type    = 'text';
-    sProcess.options.eventname.Value   = 'Maximum force';
-    % Separator
-    sProcess.options.separator.Type = 'separator';
-    sProcess.options.separator.Comment = ' ';
+    sProcess.options.eventname.Value   = 'Noise';
     % Channel name
-    sProcess.options.channelgroup.Comment = 'Channel Group: ';
+    sProcess.options.channelgroup.Comment = 'Channel Groups or Names: ';
     sProcess.options.channelgroup.Type    = 'text';
-    sProcess.options.channelgroup.Value   = 'SGMx';
+    sProcess.options.channelgroup.Value   = 'LFP1, LFP2';
     % Channel name comment
-    sProcess.options.channelhelp.Comment = 'Select the group of channels';
+    sProcess.options.channelhelp.Comment = 'Select the group of channels: "LFP1" or "LFP1,LFP2", or "All" or "LFP1_1, LFP1_2, LFP1_3"';
     sProcess.options.channelhelp.Type    = 'label';
     % Threshold
     sProcess.options.threshold.Comment = 'Amplitude threshold: ';
     sProcess.options.threshold.Type    = 'value';
-    sProcess.options.threshold.Value   = {1, ' std', 2};
-    % Threshold
-    sProcess.options.threshold_width.Comment = 'Width threshold: ';
-    sProcess.options.threshold_width.Type    = 'value';
-    sProcess.options.threshold_width.Value   = {100, ' ms', []};
-    % Blanking period
-    sProcess.options.blanking.Comment = 'Min duration between two events: ';
-    sProcess.options.blanking.Type    = 'value';
-    sProcess.options.blanking.Value   = {1000, 'ms', []};
-
+    sProcess.options.threshold.Value   = {1, ' std', 1};
 end
 
 
@@ -100,8 +88,6 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     % Prepare options structure for the detection function
     OPTIONS = Compute();
     OPTIONS.threshold       = sProcess.options.threshold.Value{1};
-    OPTIONS.blanking        = sProcess.options.blanking.Value{1};
-    OPTIONS.threshold_width = sProcess.options.threshold_width.Value{1};
     if isfield(sProcess.options,'maxcross')
         OPTIONS.maxcross   = sProcess.options.maxcross.Value;
     end
@@ -136,24 +122,79 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             DataMat = in_bst_data(sInputs(iFile).FileName, 'Time');
             sFile = in_fopen(sInputs(iFile).FileName, 'BST-DATA');
         end
+        
+        %% Check which channels to load
         % Load channel file
         ChannelMat = in_bst_channel(sInputs(iFile).ChannelFile);
+        
+        target = sProcess.options.channelgroup.Value;
+        if ~iscell(target)
+            if any(target == ',') || any(target == ';')
+                % Split string based on the commas
+                target = strtrim(str_split(target, ',;'));
+            else
+                target = {strtrim(target)};
+            end
+        end
+
+
+        % Check if All channels was selected
+        if strcmp(sProcess.options.channelgroup.Value,'All')
+            iChannels = 1:length(ChannelMat.Channel);
+        else % Check for Names
+            iChannels = channel_find(ChannelMat.Channel, sProcess.options.channelgroup.Value);
+        end
+        
+        % Else check for Groups
+        DataMat_channelFlag = in_bst_data(sInputs(iFile).FileName, 'ChannelFlag');
+        if isempty(iChannels) 
+            allGroups = upper(unique({ChannelMat.Channel.Group}));
+            % Process all the targets
+            for i = 1:length(target)
+                % Search by type: return all the channels from this Group
+                if ismember(upper(strtrim(target{i})), allGroups)
+%                         iChan = good_channel(ChannelMat.Channel, [], target{i});
+
+                    iChan = [];
+                    for iChannel = 1:length(ChannelMat.Channel)
+                        % Get only good channels
+                        if strcmp(upper(strtrim(target{i})), upper(strtrim(ChannelMat.Channel(iChannel).Group))) && DataMat_channelFlag.ChannelFlag(iChannel) == 1
+                            iChan = [iChan, iChannel];
+                        end
+                    end                             
+                end
+                % Comment
+                if ~isempty(iChan)
+                    iChannels = [iChannels, iChan];
+%                         if ~isempty(Comment)
+%                             Comment = [Comment, ', '];
+%                         end
+%                         Comment = [Comment, target{i}];
+                else
+                    bst_error('No channels were selected. Make sure that the Group name is spelled properly. Also make sure that not ALL channels in that bank are marked as BAD')
+                end
+            end
+            % Sort channels indices, and remove duplicates
+            iChannels = unique(iChannels);
+        end
+        
+        
+        
+        
+        if isempty(iChannels)
+            bst_report('Error', sProcess, sInputs(iFile), ['Channel Group or Name: "' chanName '" not found in the channel file.']);
+            stop
+        end
+        
+        
+        
+        %%
         % Process only continuous files
         if ~isempty(sFile.epochs)
             bst_report('Error', sProcess, sInputs(iFile), 'This function can only process continuous recordings (no epochs).');
             continue;
         end
-        % Get channel to process: multiple channels
-        iChannels = [];
-        for iChannel = 1:length(ChannelMat.Channel)
-            if strfind(ChannelMat.Channel(iChannel).Name, chanGroup)
-                iChannels = [iChannels iChannel];
-            end
-        end
-        if isempty(iChannels)
-            bst_report('Error', sProcess, sInputs(iFile), ['Group channel "' chanName '" not found in the channel file.']);
-            stop
-        end
+        
         iChanWeights = 1;
         % Read channel to process
         if ~isempty(TimeWindow)
@@ -173,30 +214,13 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             continue;
         end
         
-        % ===== BAD SEGMENTS =====
-        % If ignore bad segments
-        Fmask = [];
-        if isIgnoreBad
-            % Get list of bad segments in file
-            badSeg = panel_record('GetBadSegments', sFile);
-            % Adjust with beginning of file
-            badSeg = badSeg - sFile.prop.times(1)*sFile.prop.sfreq + 1;
-            if ~isempty(badSeg)
-                % Create file mask
-                Fmask = true(size(F));
-                % Loop on each segment: mark as bad
-                for iSeg = 1:size(badSeg, 2)
-                    Fmask(badSeg(1,iSeg):badSeg(2,iSeg)) = false;
-                end
-            end
-        end
         
         % ===== DETECT PEAKS =====
         % Progress bar
         bst_progress('text', 'Detecting peaks...');
         bst_progress('set', progressPos + round(2 * iFile / length(sInputs) / 3 * 100));
         % Perform detection
-        detectedEvt = Compute(F, TimeVector, OPTIONS, Fmask);
+        detectedEvt = Compute(F, TimeVector, OPTIONS);
 
         % ===== CREATE EVENTS =====
         sEvent = [];
@@ -273,7 +297,7 @@ end
 % USAGE:      evt = Compute(F, TimeVector, OPTIONS, Fmask)
 %             evt = Compute(F, TimeVector, OPTIONS)
 %         OPTIONS = Compute()                              : Get the default options structure
-function evt = Compute(F, TimeVector, OPTIONS, Fmask)
+function evt = Compute(F, TimeVector, OPTIONS)
     % Options structure
     defOptions = struct('bandpass',     [10, 40], ...   % Filter the signal before performing the detection, [highpass, lowpass]
                         'threshold',    2, ...          % Create an event if the value goes > threshold * standard deviation
@@ -310,26 +334,31 @@ function evt = Compute(F, TimeVector, OPTIONS, Fmask)
     
     %% Magic happens here
     
-%     % Filter the signals
-%     OPTIONS.bandpass = [0.1 40];
-%     [b,a] = butter(2, [OPTIONS.bandpass(1) OPTIONS.bandpass(2)]./(sFreq/2),'bandpass');
-%     F = filtfilt(b,a,F')';
-    
     evt = cell(1,size(F,1));
     
+    % Get the global threshold
+    global_std  = mean(std(F,[],2));
+    global_mean = mean(mean(F));
+    
+    global_threshold = abs(global_mean) + OPTIONS.threshold * global_std;
+    
+    mask = abs(F) > global_threshold;
+    
     for iChannel = 1:size(F,1)
-        [maximum_force, evt{iChannel}] = findpeaks(abs(F(iChannel,:)),'MinPeakHeight', OPTIONS.threshold*std(abs(F(iChannel,:))),...
-                                                                               'MinPeakDistance', round(sFreq*OPTIONS.blanking),...
-                                                                               'MinPeakWidth', round(sFreq*OPTIONS.threshold_width/1000));
+        
+        
+        
+        FINISH THIS
+        
+        
     end
-       
     
     
     % Plot the results - This in general should be commented out
     % Left it here for threshold visualization
     possible_plot_positions = {'northwest', 'northeast', 'southwest', 'southeast'};
 
-    for iChannel = 1:size(F,1)
+    for iChannel = 30:33
         f = figure(iChannel); 
         if iChannel<5
             movegui(f,possible_plot_positions{iChannel});
