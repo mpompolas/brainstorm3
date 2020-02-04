@@ -63,6 +63,10 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.kfold.Comment = 'Number of folds: ';
     sProcess.options.kfold.Type    = 'value';
     sProcess.options.kfold.Value   = {10,'',0};
+    % Options: Parallel Processing
+    sProcess.options.paral.Comment = 'Parallel processing';
+    sProcess.options.paral.Type    = 'checkbox';
+    sProcess.options.paral.Value   = 1;
 end
 
 
@@ -86,7 +90,22 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB) %#ok<DEFNU>
         case 2,  MethodClassif = 'LibSVM';
         case 3,  MethodClassif = 'MatlabLDA';
     end
-
+    
+    
+    % Prepare parallel pool, if requested
+    if sProcess.options.paral.Value
+        try
+            poolobj = gcp('nocreate');
+            if isempty(poolobj)
+                parpool;
+            end
+        catch
+            sProcess.options.paral.Value = 0;
+        end
+    else
+        poolobj = [];
+    end
+    
     % Make sure that file type is indentical for both sets
     if ~isempty(sInputsA) && ~isempty(sInputsB) && ~strcmpi(sInputsA(1).FileType, sInputsB(1).FileType)
         bst_report('Error', sProcess, sInputsA, 'Cannot process inputs from different types.');
@@ -121,7 +140,7 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB) %#ok<DEFNU>
     % Load trials
     [trial,Time] = load_trials_bs(sInputsA, sInputsB, LowPass, SensorTypes);
     % Run classifier analysis
-    [Accuracy,Time] = classifier_contrast_conditions_CrossVal_bs(trial, Time, kfold, MethodClassif);
+    [Accuracy,Time] = classifier_contrast_conditions_CrossVal_bs(trial, Time, kfold, MethodClassif, poolobj);
 
     % ===== CREATE OUTPUT FILE =====
     % Get comment for files A and B
@@ -203,7 +222,7 @@ end
 %% ===== SVM DECODING =====
 % Apply SVM classificaiton on MEG trials. Uses Stratified cross-validation.
 % Authors: Seyed-Mahdi Khaligh-Razavi, Dimitrios Pantazis
-function [accuracy,Time] = classifier_contrast_conditions_CrossVal_bs(trial, Time, kfold, MethodClassif)
+function [accuracy,Time] = classifier_contrast_conditions_CrossVal_bs(trial, Time, kfold, MethodClassif, poolobj)
     % Initialize
     ntimes = size(trial{1}{1},2);
     ntrials = min([length(trial{1}) length(trial{2})]);
@@ -231,30 +250,56 @@ function [accuracy,Time] = classifier_contrast_conditions_CrossVal_bs(trial, Tim
     labels = [ones(1,ntrials) 2*ones(1,ntrials)];
     crossValidatedAccuracy = zeros(1,ntimes);
 
-    bst_progress('start','decoding','Cross validating ...',1,ntimes);
+    if ~isempty(poolobj)
+        bst_progress('start','Decoding in parallel','Cross validating ...',1,0);
+        parfor tndx = 1:ntimes
+            switch (MethodClassif)
+                case 'MatlabSVM'
+                    % train/test the svm classifier
+                    cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
+                    trainedSVM = fitcsvm(squeeze(all_trials(:,:,tndx)),labels);
+                    svmCrosVal = crossval(trainedSVM,'cvPartition',cp);
+                    crossValidatedAccuracy(tndx) = 100 * (1 - svmCrosVal.kfoldLoss);
 
-    for tndx = 1:ntimes
-        bst_progress('inc', 1);
-        switch (MethodClassif)
-            case 'MatlabSVM'
-                % train/test the svm classifier
-                cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
-                trainedSVM = fitcsvm(squeeze(all_trials(:,:,tndx)),labels);
-                svmCrosVal = crossval(trainedSVM,'cvPartition',cp);
-                crossValidatedAccuracy(tndx) = 100 * (1 - svmCrosVal.kfoldLoss);
-                
-            case 'LibSVM'
-                svmCrosValAcc = do_binary_cross_validation(labels',squeeze(all_trials(:,:,tndx)),'-s 0 -t 0 -q', 5);
-                crossValidatedAccuracy(tndx) = 100 *svmCrosValAcc;
-                
-            case 'MatlabLDA'
-                % === linear discriminant classification ===
-                cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
-                trainedLDA = fitcdiscr(squeeze(all_trials(:,:,tndx)),labels);
-                LDACrosVal = crossval(trainedLDA,'cvPartition',cp);
-                crossValidatedAccuracy(tndx) = 100 * (1 - LDACrosVal.kfoldLoss);
+                case 'LibSVM'
+                    svmCrosValAcc = do_binary_cross_validation(labels',squeeze(all_trials(:,:,tndx)),'-s 0 -t 0 -q', 5);
+                    crossValidatedAccuracy(tndx) = 100 *svmCrosValAcc;
+
+                case 'MatlabLDA'
+                    % === linear discriminant classification ===
+                    cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
+                    trainedLDA = fitcdiscr(squeeze(all_trials(:,:,tndx)),labels);
+                    LDACrosVal = crossval(trainedLDA,'cvPartition',cp);
+                    crossValidatedAccuracy(tndx) = 100 * (1 - LDACrosVal.kfoldLoss);
+            end
+        end
+        
+    else
+        bst_progress('start','decoding','Cross validating ...',1,ntimes);
+        for tndx = 1:ntimes
+            bst_progress('inc', 1);
+            switch (MethodClassif)
+                case 'MatlabSVM'
+                    % train/test the svm classifier
+                    cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
+                    trainedSVM = fitcsvm(squeeze(all_trials(:,:,tndx)),labels);
+                    svmCrosVal = crossval(trainedSVM,'cvPartition',cp);
+                    crossValidatedAccuracy(tndx) = 100 * (1 - svmCrosVal.kfoldLoss);
+
+                case 'LibSVM'
+                    svmCrosValAcc = do_binary_cross_validation(labels',squeeze(all_trials(:,:,tndx)),'-s 0 -t 0 -q', 5);
+                    crossValidatedAccuracy(tndx) = 100 *svmCrosValAcc;
+
+                case 'MatlabLDA'
+                    % === linear discriminant classification ===
+                    cp = cvpartition(labels,'k',kfold); % Stratified cross-validation
+                    trainedLDA = fitcdiscr(squeeze(all_trials(:,:,tndx)),labels);
+                    LDACrosVal = crossval(trainedLDA,'cvPartition',cp);
+                    crossValidatedAccuracy(tndx) = 100 * (1 - LDACrosVal.kfoldLoss);
+            end
         end
     end
+    
     bst_progress('stop');
     % Return accuracy
     accuracy = crossValidatedAccuracy;
