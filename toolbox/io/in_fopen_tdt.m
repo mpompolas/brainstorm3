@@ -111,7 +111,9 @@ for iStream = 1:length(all_streams)
     
     theLFPlabel = 'LFP';
     if strfind(all_streams{iStream},theLFPlabel)
-        general_sampling_rate = data.streams.(all_streams{iStream}).fs;
+        data_new = TDTbin2mat(DataFolder, 'STORE', all_streams{iStream},'T1', 0, 'T2', 1); % 1 second segment       
+        
+        general_sampling_rate = data_new.streams.(all_streams{iStream}).fs;
         LFP_label_exists = 1;
     end
 end
