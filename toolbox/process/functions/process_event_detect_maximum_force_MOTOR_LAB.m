@@ -65,7 +65,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Threshold
     sProcess.options.threshold.Comment = 'Amplitude threshold: ';
     sProcess.options.threshold.Type    = 'value';
-    sProcess.options.threshold.Value   = {1, ' std', 2};
+    sProcess.options.threshold.Value   = {4, ' std', 2};
     % Threshold
     sProcess.options.threshold_width.Comment = 'Width threshold: ';
     sProcess.options.threshold_width.Type    = 'value';
@@ -73,7 +73,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Blanking period
     sProcess.options.blanking.Comment = 'Min duration between two events: ';
     sProcess.options.blanking.Type    = 'value';
-    sProcess.options.blanking.Value   = {1000, 'ms', []};
+    sProcess.options.blanking.Value   = {2000, 'ms', []};
 
 end
 
@@ -230,6 +230,19 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 sEvent.color = rand(1,3);
                 sEvent.label = [newName '_' chanGroup num2str(i)];
             end
+            
+%             
+%             % PLOT FOR VERIFICATION
+%             figure(10);
+%             
+%             plot(TimeVector, F(i,:));
+%             hold on
+%             plot(TimeVector(detectedEvt{i}), F(i,detectedEvt{i}),'*')
+%             
+            
+            
+            
+            
             % Times, samples, epochs
             sEvent.times    = detectedEvt{i}/sFile.prop.sfreq + TimeWindow(1);
             sEvent.epochs   = ones(1, size(sEvent.times,2));
