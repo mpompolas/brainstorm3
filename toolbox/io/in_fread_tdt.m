@@ -139,7 +139,18 @@ for iStream = 1:length(streams_to_load)
     % DROP SAMPLES HERE FOR THE HIGH SAMPLED SIGNALS (LED, EMG ETC.)
     elseif stream_info(iStream).fs > Fs
         
-        high_sampled_signal = double(data.data(selected_channels_from_stream{iStream},:));        
+        
+       high_sampled_signal = double(data.data(selected_channels_from_stream{iStream},:));
+       
+       % Make sure the signal has all the samples we expect
+       nExpectedSamples = floor(nSamples / Fs * stream_info(iStream).fs);
+       nGottenSamples = size(high_sampled_signal,2);
+       high_sampled_signal2 = zeros(size(high_sampled_signal,1), nExpectedSamples);
+       high_sampled_signal2(:,1:min(nGottenSamples,nExpectedSamples)) = high_sampled_signal;
+       high_sampled_signal = high_sampled_signal2;
+        
+        
+%         high_sampled_signal = double(data.data(selected_channels_from_stream{iStream},:));        
         
         nSamplesToDrop =  size(high_sampled_signal,2) - nSamples;
         
