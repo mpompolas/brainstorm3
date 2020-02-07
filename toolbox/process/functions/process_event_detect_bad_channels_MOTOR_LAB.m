@@ -179,14 +179,10 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         end
         
         
-        
-        
         if isempty(iChannels)
             bst_report('Error', sProcess, sInputs(iFile), ['Channel Group or Name: "' chanName '" not found in the channel file.']);
             stop
         end
-        
-        
         
         %%
         % Process only continuous files
@@ -230,40 +226,37 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         end
         % Process each event type separately
         for i = 1:length(detectedEvt)
-            % Event name
-            if (i > 1)
-                newName = sprintf('%s%d', evtName, i);
-            else
-                newName = evtName;
-            end
-            % Get the event to create
-            iEvt = find(strcmpi({sFile.events.label}, [newName '_' chanGroup num2str(i)]));
-            % Existing event: reset it
-            if ~isempty(iEvt)
-                sEvent = sFile.events(iEvt);
-                sEvent.epochs  = [];
-                sEvent.times   = [];
-                sEvent.reactTimes = [];
-            % Else: create new event
-            else
-                % Initialize new event
-                iEvt = length(sFile.events) + 1;
-                sEvent = db_template('event');
-                sEvent.label = newName;
-                % Set the default color for this new event
-                sEvent.color = rand(1,3);
-                sEvent.label = [newName '_' chanGroup num2str(i)];
-            end
-            % Times, samples, epochs
-            sEvent.times    = detectedEvt{i}/sFile.prop.sfreq + TimeWindow(1);
-            sEvent.epochs   = ones(1, size(sEvent.times,2));
-            sEvent.channels = cell(1, size(sEvent.times,2));
-            sEvent.notes    = cell(1, size(sEvent.times,2));
             
-            % Add to events structure
-            sFile.events(iEvt) = sEvent;
-            nEvents = nEvents + 1;
-            nTotalOcc = nTotalOcc + size(sEvent.times, 2);
+            if ~isempty(detectedEvt{i})
+
+                % Get the event to create
+                iEvt = find(strcmpi({sFile.events.label}, [evtName '_' ChannelMat.Channel(iChannels(i)).Name]));
+                % Existing event: reset it
+                if ~isempty(iEvt)
+                    sEvent = sFile.events(iEvt);
+                    sEvent.epochs  = [];
+                    sEvent.times   = [];
+                    sEvent.reactTimes = [];
+                % Else: create new event
+                else
+                    % Initialize new event
+                    iEvt = length(sFile.events) + 1;
+                    sEvent = db_template('event');
+                    % Set the default color for this new event
+                    sEvent.color = rand(1,3);
+                    sEvent.label = [evtName '_' ChannelMat.Channel(iChannels(i)).Name];
+                end
+                % Times, samples, epochs
+                sEvent.times    = detectedEvt{i}/sFile.prop.sfreq + TimeWindow(1);
+                sEvent.epochs   = ones(1, size(sEvent.times,2));
+                sEvent.channels = cell(1, size(sEvent.times,2));
+                sEvent.notes    = cell(1, size(sEvent.times,2));
+
+                % Add to events structure
+                sFile.events(iEvt) = sEvent;
+                nEvents = nEvents + 1;
+                nTotalOcc = nTotalOcc + size(sEvent.times, 2);
+            end
         end
         
         % ===== SAVE RESULT =====
@@ -344,32 +337,71 @@ function evt = Compute(F, TimeVector, OPTIONS)
     
     mask = abs(F) > global_threshold;
     
+    
+    
+    disp('')
+    disp('')
+    disp('-------------------------------')
+    disp('CHANNELS PERCENTAGE PROBLEMATIC')
+    disp('-------------------------------')
+    
+    
     for iChannel = 1:size(F,1)
         
+        transition = diff(mask(iChannel,:));
         
+        onset  = find(transition == 1)+1;
+        offset = find(transition == -1);
         
-        FINISH THIS
+        if ~isempty(onset) && ~isempty(offset)
         
-        
-    end
-    
-    
-    % Plot the results - This in general should be commented out
-    % Left it here for threshold visualization
-    possible_plot_positions = {'northwest', 'northeast', 'southwest', 'southeast'};
+            if offset(1)<onset(1)
+                onset  = [1 find(transition == 1)+1];
+                offset = find(transition == -1);
+            end
+            if offset(end)<onset(end)
+                onset  = find(transition == 1)+1;
+                offset = [find(transition == -1) size(mask,2)];
+            end
 
-    for iChannel = 30:33
-        f = figure(iChannel); 
-        if iChannel<5
-            movegui(f,possible_plot_positions{iChannel});
+            
+            indices_to_keep = [];
+            for ii = 1:length(onset)
+                if onset(ii) ~= offset(ii)
+                	indices_to_keep = [indices_to_keep ii];
+                end
+            end
+                        
+            evt{iChannel} = [onset(indices_to_keep) ; offset(indices_to_keep)];
+            
+            disp(['Channel: ' num2str(iChannel) ' was outside the threshold ' num2str(sum(offset(indices_to_keep) - onset(indices_to_keep)) / size(F,2)*100) '%'])
+            
+        else
+            evt{iChannel} = [];
         end
-        drawnow;
-        plot(TimeVector,F(iChannel,:));
-        hold on; title 'Event maximum force';
-        plot(TimeVector(evt{iChannel}),F(iChannel,evt{iChannel}),'r*'); 
-        plot(TimeVector, ones(1,length(TimeVector)) * OPTIONS.threshold*std(abs(F(iChannel,:))))
-        hold off; drawnow;
+        
     end
+    
+    
+    
+%     % Plot the results - This in general should be commented out
+%     % Left it here for threshold visualization
+%     possible_plot_positions = {'northwest', 'northeast', 'southwest', 'southeast'};
+% 
+%     for iChannel = 1:4
+%         f = figure(iChannel); 
+%         if iChannel<5
+%             movegui(f,possible_plot_positions{iChannel});
+%         end
+%         drawnow;
+%         plot(TimeVector,F(iChannel,:));
+%         hold on; title (['Channel: ' num2str(iChannel)]);
+%         plot(TimeVector(evt{1,iChannel}(1,:)),F(iChannel,evt{1,iChannel}(1,:)),'g*'); 
+%         plot(TimeVector(evt{1,iChannel}(2,:)),F(iChannel,evt{1,iChannel}(2,:)),'r*'); 
+%         plot(TimeVector, ones(1,length(TimeVector)) * global_threshold)
+%         plot(TimeVector, ones(1,length(TimeVector)) * (-global_threshold))
+%         hold off; drawnow;
+%     end
 
 end
 
