@@ -257,7 +257,7 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
         return;
     end
 
-    % ===== COMPUTE BANDPASS FILTER =====
+     % ===== COMPUTE BANDPASS FILTER =====
     % Get the time vector for the first file
     DataMat = in_bst_data(sInputsA(1).FileName, 'Time');
     sfreq = 1 ./ (DataMat.Time(2) - DataMat.Time(1));
@@ -265,7 +265,7 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
     if ~isempty(BandPass) && ~all(BandPass == 0)
         % If we need to resample the recordings
         if (resample_factor > 0)
-            filterFreq = DataMat.F.prop.sfreq/resample_factor;
+            filterFreq = sfreq/resample_factor;
         % Use the original sampling frequency
         else
             filterFreq = sfreq;
@@ -464,7 +464,8 @@ function OutputFiles = Run(sProcess, sInputsA, sInputsB)
                     TimeVector_temp{iOcc} = TimeVector_single; % All are the same
                 end
             end
-                
+                         
+            F = F(find(~cellfun(@isempty,F))); % Get rid of empty cells - This will occur when only a few events are within the timeWindow selected
             TimeVector = TimeVector_temp{1};
             nSamples = sum(temp_nSamples);
             
@@ -1191,6 +1192,7 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
     if ~isempty(TimeWindow) && ((TimeBounds(1) < TimeWindow(1)) || (TimeBounds(2) > TimeWindow(2)))
         Fevt = [];
         nSamples_single = 0;
+        TimeVector = [];
         
         return; % was continue
     end
@@ -1199,6 +1201,7 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
         nInfoBad = nInfoBad + 1;
         Fevt = [];
         nSamples_single = 0;
+        TimeVector = [];
         
         return; % was continue
     % Check if this this segment is  outside of the file bounds
@@ -1206,6 +1209,7 @@ function [Fevt, nSamples_single, TimeVector] = load_segments_in_parallel(iOcc, i
         bst_report('Info', sProcess, sInputsA(iFile), sprintf('Event %s #%d is too close to the beginning or end of the file: ignored...', evtName, iOcc));
         Fevt = [];
         nSamples_single = 0;
+        TimeVector = [];
 
         return; % was continue
     end
