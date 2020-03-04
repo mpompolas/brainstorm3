@@ -503,9 +503,27 @@ function convertKilosort2BrainstormEvents(sFile, ChannelMat, parentPath, rez)
         
         index = index+1;
         
+        
+        
+        
+        
+        
+        
+        
+        
+        ADD THE LABEL OF THE GROUP ON THE NOISE AND MUA LABELS
+        
+        
+        
+        
+        
+        
+        
         % Write the packet to events
-        if uniqueClusters(iCluster)==1 || uniqueClusters(iCluster)==0
+        if uniqueClusters(iCluster)==0
             events(index).label       = ['Spikes Noise |' num2str(uniqueClusters(iCluster)) '|'];
+        elseif uniqueClusters(iCluster)==1 
+            events(index).label       = ['Spikes MUA |' num2str(uniqueClusters(iCluster)) '|'];
         else
             events(index).label       = [spikeEventPrefix ' ' ChannelMat.Channel(amplitude_max_channel(uniqueClusters(iCluster))).Name ' |' num2str(uniqueClusters(iCluster)) '|'];
         end
