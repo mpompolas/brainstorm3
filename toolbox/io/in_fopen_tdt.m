@@ -118,11 +118,21 @@ for iStream = 1:length(all_streams)
     end
 end
 
-if ~LFP_label_exists
-    bst_error(['The sampling rate is assumed to be assigned by a stream that contains the label: "LFP".' 10 ...
-               '1. Change the string in the search for the sampling rates before from "LFP" to the label of the stream that your data is saved in.' 10 ...
-               '2. Change the string in the channelMat creation below from "LFP" to the label of the stream that your data is saved in.'])
+if ~LFP_label_exists    
+    [indx,tf] = listdlg('PromptString',{'Select the label of the electrophysiological signal that is present in this dataset',...
+    'If more streams are present, they will be resampled to match the Fs of this stream.',''},...
+    'SelectionMode','single','ListString',all_streams);
+    
+    data_new = TDTbin2mat(DataFolder, 'STORE', all_streams{indx},'T1', 0, 'T2', 1); % 1 second segment       
+        
+    general_sampling_rate = data_new.streams.(all_streams{indx}).fs;
+    LFP_label_exists = 1;
+    
+    
+    if isempty(indx)
+        bst_error('No stream was selected')
            stop
+    end
 end
     
 nChannels = sum([stream_info.total_channels]);
@@ -230,7 +240,7 @@ end
 %% Check for spike events
 
 
-check_for_spikes = 0;
+check_for_spikes = 1;
 
 
 
@@ -269,11 +279,17 @@ if are_there_spikes
     end
     
     all_spike_event_Labels = fieldnames(NO_data.snips);
-    channels_are_EEG = find(strcmp({ChannelMat.Channel.Type}, 'EEG'));
 
     for iSpikeDetectedField = 1:length(all_spike_event_Labels)
+%         channels_are_EEG = find(strcmp({ChannelMat.Channel.Type}, 'EEG'));
         
-        for iChannel = 1:length(channels_are_EEG)
+        try
+            channels_are_EEG_on_selected_RIG = find(strcmp({ChannelMat.Channel.Type}, 'EEG') & strcmp({ChannelMat.Channel.Group}, ['LFP' num2str(iSpikeDetectedField)]));
+        catch
+            error('There is an assumption here that LFP1 corresponds to eNe1, LFP2 to eNe2 and so on. If that''s not the case on your system please contact the forum') 
+        end
+
+        for iChannel = 1:length(channels_are_EEG_on_selected_RIG)
             
             NeuronIDs = unique(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).sortcode(find(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).chan == iChannel)));
             
@@ -292,10 +308,10 @@ if are_there_spikes
 
                     if length(NeuronIDs) == 1
                         SpikesOfThatNeuronOnChannel_Indices = find(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).chan == iChannel & NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).sortcode == 0); % Unsorted
-                        events(last_event_index).label = ['Spikes Channel ' ChannelMat.Channel(channels_are_EEG(iChannel)).Name];
+                        events(last_event_index).label = ['Spikes Channel ' ChannelMat.Channel(channels_are_EEG_on_selected_RIG(iChannel)).Name];
                     else
-                        SpikesOfThatNeuronOnChannel_Indices = find(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).chan == iChannel & NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).sortcode == iNeuron); % Sorted
-                        events(last_event_index).label = ['Spikes Channel ' ChannelMat.Channel(channels_are_EEG(iChannel)).Name ' |' num2str(iNeuron) '|'];                    
+                        SpikesOfThatNeuronOnChannel_Indices = find(NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).chan == iChannel & NO_data.snips.(all_spike_event_Labels{iSpikeDetectedField}).sortcode == NeuronIDs(iNeuron)); % Sorted
+                        events(last_event_index).label = ['Spikes Channel ' ChannelMat.Channel(channels_are_EEG_on_selected_RIG(iChannel)).Name ' |' num2str(NeuronIDs(iNeuron)) '|'];                    
                     end
 
                     events(last_event_index).color      = rand(1,3);
