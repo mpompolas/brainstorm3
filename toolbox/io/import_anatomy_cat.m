@@ -1,7 +1,7 @@
-function errorMsg = import_anatomy_cat(iSubject, CatDir, nVertices, isInteractive, sFid, isExtraMaps, isKeepMri)
+function errorMsg = import_anatomy_cat(iSubject, CatDir, nVertices, isInteractive, sFid, isExtraMaps, isKeepMri, isTissues)
 % IMPORT_ANATOMY_CAT: Import a full CAT12 folder as the subject's anatomy.
 %
-% USAGE:  errorMsg = import_anatomy_cat(iSubject, CatDir=[], nVertices=15000, isInteractive=1, sFid=[], isExtraMaps=0, isKeepMri=0)
+% USAGE:  errorMsg = import_anatomy_cat(iSubject, CatDir=[], nVertices=15000, isInteractive=1, sFid=[], isExtraMaps=0, isKeepMri=0, isTissues=1)
 %
 % INPUT:
 %    - iSubject     : Indice of the subject where to import the MRI
@@ -14,6 +14,8 @@ function errorMsg = import_anatomy_cat(iSubject, CatDir, nVertices, isInteractiv
 %    - isKeepMri    : 0=Delete all existing anatomy files
 %                     1=Keep existing MRI volumes (when running segmentation from Brainstorm)
 %                     2=Keep existing MRI and surfaces
+%    - isTissues     : If 1, combine the tissue probability maps (/mri/p*.nii) into a "tissue" volume
+%
 % OUTPUT:
 %    - errorMsg : String: error message if an error occurs
 
@@ -35,9 +37,13 @@ function errorMsg = import_anatomy_cat(iSubject, CatDir, nVertices, isInteractiv
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Authors: Francois Tadel, 2019
+% Authors: Francois Tadel, 2019-2020
 
 %% ===== PARSE INPUTS =====
+% Import tissues
+if (nargin < 8) || isempty(isTissues)
+    isTissues = 1;
+end
 % Keep MRI
 if (nargin < 7) || isempty(isKeepMri)
     isKeepMri = 0;
@@ -187,16 +193,28 @@ Annot32kLhFiles(cellfun(@isempty, Annot32kLhFiles)) = [];
 Annot32kRhFiles(cellfun(@isempty, Annot32kRhFiles)) = [];
 
 % Find tissue probability maps
-TpmFiles = {file_find(CatDir, 'p2*.nii', 2), ...  % White matter
-            file_find(CatDir, 'p1*.nii', 2), ...  % Gray matter
-            file_find(CatDir, 'p3*.nii', 2), ...  % CSF
-            file_find(CatDir, 'p4*.nii', 2), ...  % Skull
-            file_find(CatDir, 'p5*.nii', 2), ...  % Scalp
-            file_find(CatDir, 'p6*.nii', 2)};     % Background
-% Find thickness maps
+if isTissues
+    TpmFiles = {file_find(CatDir, 'p2*.nii', 2), ...  % White matter
+                file_find(CatDir, 'p1*.nii', 2), ...  % Gray matter
+                file_find(CatDir, 'p3*.nii', 2), ...  % CSF
+                file_find(CatDir, 'p4*.nii', 2), ...  % Skull
+                file_find(CatDir, 'p5*.nii', 2), ...  % Scalp
+                file_find(CatDir, 'p6*.nii', 2)};     % Background
+end
+% Find extra cortical maps
 if isExtraMaps
+    % Cortical thickness
     ThickLhFile = file_find(CatDir, 'lh.thickness.*', 2);
     ThickRhFile = file_find(CatDir, 'rh.thickness.*', 2);
+    % Gyrification maps
+    GyriLhFile = file_find(CatDir, 'lh.gyrification.*', 2);
+    GyriRhFile = file_find(CatDir, 'rh.gyrification.*', 2);
+    % Sulcal maps
+    SulcalLhFile = file_find(CatDir, 'lh.sqrtsulc.*', 2);
+    SulcalRhFile = file_find(CatDir, 'rh.sqrtsulc.*', 2);
+    % Cortical complexity maps
+    FDLhFile = file_find(CatDir, 'lh.fractaldimension.*', 2);
+    FDRhFile = file_find(CatDir, 'rh.fractaldimension.*', 2);
 end
 % Find fiducials definitions
 FidFile = file_find(CatDir, 'fiducials.m');
@@ -493,16 +511,30 @@ HeadFile = tess_isohead(iSubject, 10000, 0, 2);
 
 
 %% ===== IMPORT THICKNESS MAPS =====
-if isExtraMaps && ~isempty(CortexHiFile) && ~isempty(ThickLhFile) && ~isempty(ThickLhFile)
+if isExtraMaps && ~isempty(CortexHiFile)
     % Create a condition "CAT12"
     iStudy = db_add_condition(iSubject, 'CAT12');
     % Import cortical thickness
-    ThickFile = import_sources(iStudy, CortexHiFile, ThickLhFile, ThickRhFile, 'FS');
+    if ~isempty(ThickLhFile) && ~isempty(ThickLhFile)
+        import_sources(iStudy, CortexHiFile, ThickLhFile, ThickRhFile, 'FS', 'thickness');
+    end
+    % Import gyrification
+    if ~isempty(GyriLhFile) && ~isempty(GyriRhFile)
+        import_sources(iStudy, CortexHiFile, GyriLhFile, GyriRhFile, 'FS', 'gyrification');
+    end
+    % Import sulcal depth
+    if ~isempty(SulcalLhFile) && ~isempty(SulcalRhFile)
+        import_sources(iStudy, CortexHiFile, SulcalLhFile, SulcalRhFile, 'FS', 'sqrtsulc');
+    end
+    % Import cortex complexity
+    if ~isempty(FDLhFile) && ~isempty(FDRhFile)
+        import_sources(iStudy, CortexHiFile, FDLhFile, FDRhFile, 'FS', 'fractaldimension');
+    end
 end
 
 
 %% ===== IMPORT TISSUE LABELS =====
-if ~isempty(TpmFiles)
+if isTissues && ~isempty(TpmFiles)
     bst_progress('start', 'Import CAT12 folder', 'Importing tissue probability maps...');
     sMriTissue = [];
     pCube = [];

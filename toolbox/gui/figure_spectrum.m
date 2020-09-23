@@ -239,9 +239,11 @@ function FigureMouseDownCallback(hFig, ev)
         % CTRL+Mouse, or Mouse right
         case 'alt'
             clickAction = 'gzoom';
+            set(hFig, 'Pointer', 'top');
         % SHIFT+Mouse
         case 'extend'
             clickAction = 'pan';
+            set(hFig, 'Pointer', 'fleur');
         % DOUBLE CLICK
         case 'open'
             ResetView(hFig);
@@ -328,6 +330,9 @@ function FigureMouseUpCallback(hFig, event)
     % Reset figure mouse fields
     setappdata(hFig, 'clickAction', '');
     setappdata(hFig, 'hasMoved', 0);
+    % Restore mouse pointer
+    set(hFig, 'Pointer', 'arrow');
+    drawnow;
     % Get axes handles
     hAxes = getappdata(hFig, 'clickSource');
     if isempty(hAxes) || ~ishandle(hAxes)
@@ -531,7 +536,7 @@ function ZoomSelection(hFig)
     end
     % Set axes bounds to selection
     hAxesList = findobj(hFig, '-depth', 1, 'Tag', 'AxesGraph');
-    set(hAxesList, 'XLim', [GraphSelection(1), GraphSelection(2)]);
+    set(hAxesList, 'XLim', [min(GraphSelection), max(GraphSelection)]);
     % Draw new time selection
     setappdata(hFig, 'GraphSelection', []);
     DrawSelection(hFig);
@@ -627,6 +632,12 @@ function FigureKeyPressedCallback(hFig, ev)
         case 't'           
             if isControl
                 view_topography(TfFile, [], '2DSensorCap', [], 0);
+            end
+        % Y : Scale to fit Y axis
+        case 'y'
+            TsInfo = getappdata(hFig, 'TsInfo');
+            if strcmpi(TsInfo.DisplayMode, 'butterfly')
+                figure_timeseries('ScaleToFitY', hFig, ev);
             end
         % RETURN: VIEW SELECTED CHANNELS
         case 'return'
@@ -811,12 +822,20 @@ function ToggleGrid(hAxes, hFig, xy)
 
     RefreshGridBtnDisplay(hFig, TsInfo);
 end
-function ToggleLogScale(hAxes, hFig, loglin)
+function ToggleLogScaleX(hAxes, hFig, loglin)
     set(hAxes, 'XScale', loglin);
     TsInfo = getappdata(hFig, 'TsInfo');
     TsInfo.XScale = loglin;
     setappdata(hFig, 'TsInfo', TsInfo);
     RefreshLogScaleBtnDisplay(hFig, TsInfo);
+    bst_set('XScale', loglin);
+end
+function ToggleLogScaleY(hAxes, hFig, loglin)
+    set(hAxes, 'YScale', loglin);
+    TsInfo = getappdata(hFig, 'TsInfo');
+    TsInfo.YScale = loglin;
+    setappdata(hFig, 'TsInfo', TsInfo);
+    bst_set('YScale', loglin);
 end
 function RefreshLogScaleBtnDisplay(hFig, TsInfo)
     % Toggle selection of associated button if possible
@@ -960,12 +979,19 @@ function DisplayFigurePopup(hFig, menuTitle)
         
     % ==== MENU: FIGURE ====    
     jMenuFigure = gui_component('Menu', jPopup, [], 'Figure', IconLoader.ICON_LAYOUT_SHOWALL);
-        % XGrid
+        % XScale
         isXLog = strcmpi(get(hAxes, 'XScale'), 'log');
         if isXLog
-            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'X scale: linear', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScale(hAxes, hFig, 'linear'));
+            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'X scale: linear', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScaleX(hAxes, hFig, 'linear'));
         else
-            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'X scale: log', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScale(hAxes, hFig, 'log'));
+            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'X scale: log', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScaleX(hAxes, hFig, 'log'));
+        end
+        % YScale
+        isYLog = strcmpi(get(hAxes, 'YScale'), 'log');
+        if isYLog
+            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'Y scale: linear', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScaleY(hAxes, hFig, 'linear'));
+        else
+            jItem = gui_component('CheckBoxMenuItem', jMenuFigure, [], 'Y scale: log', IconLoader.ICON_LOG, [], @(h,ev)ToggleLogScaleY(hAxes, hFig, 'log'));
         end
         jMenuFigure.addSeparator();
         
@@ -1031,6 +1057,30 @@ function UpdateFigurePlot(hFig, isForced)
     [Time, Freqs, TfInfo, TF, RowNames, FullTimeVector, DataType, tmp, iTimefreq] = figure_timefreq('GetFigureData', hFig, TimeDef);
     if isempty(TF)
         return;
+    end
+    % FOOOF: Swap TF data for relevant FOOOF data
+    if isfield(GlobalData.DataSet(iDS).Timefreq(iTimefreq).Options, 'FOOOF') && ~isempty(GlobalData.DataSet(iDS).Timefreq(iTimefreq).Options.FOOOF) && ~strcmp(TfInfo.FOOOFDisp, 'spectrum')
+         fFreqs = GlobalData.DataSet(iDS).Timefreq(iTimefreq).Options.FOOOF.freqs;
+         i_model = ismember(Freqs, fFreqs);
+         TF = NaN(size(TF));
+         for chan = 1:size(TF,1)
+             % Get requested FOOOF measure
+             switch TfInfo.FOOOFDisp
+                 case 'model'
+                     TF(chan,1,i_model) = GlobalData.DataSet(iDS).Timefreq.Options.FOOOF.data(chan).FOOOF.fooofed_spectrum;
+                 case 'aperiodic'
+                     TF(chan,1,i_model) = GlobalData.DataSet(iDS).Timefreq.Options.FOOOF.data(chan).FOOOF.ap_fit;
+                 case 'peaks'
+                     TF(chan,1,i_model) = GlobalData.DataSet(iDS).Timefreq.Options.FOOOF.data(chan).FOOOF.peak_fit;
+             end
+             % Apply requested function to measure
+             switch TfInfo.Function
+                 case 'magnitude'
+                     TF(chan,1,i_model) = sqrt(abs(TF(chan,1,i_model)));
+                 case 'log'
+                     TF(chan,1,i_model) = 10 .* log10(abs(TF(chan,1,i_model)));
+             end
+        end
     end
     % Row names
     if ~isempty(RowNames) && ischar(RowNames)
@@ -1188,6 +1238,12 @@ function UpdateFigurePlot(hFig, isForced)
     else
         set(hAxes, 'XScale', TsInfo.XScale);
     end
+    if ~isfield(TsInfo, 'YScale')
+        TsInfo.YScale = 'linear';
+        setappdata(hFig, 'TsInfo', TsInfo);
+    else
+        set(hAxes, 'YScale', TsInfo.YScale);
+    end
 
     % Create scale buttons
     if isempty(findobj(hFig, 'Tag', 'ButtonGainPlus'))
@@ -1319,7 +1375,7 @@ function PlotHandles = PlotAxesButterfly(hAxes, PlotHandles, TfInfo, TsInfo, X, 
     % Get automatic YLim
     if ~isempty(Fmax) && (Fmax(1) ~= Fmax(2))
         % Use the first local maximum: ignores the huge range of high frequencies
-        if any(strcmpi(TfInfo.Function, {'power', 'magnitude'})) && all(TF(:)>=0)
+        if any(strcmpi(TfInfo.Function, {'power', 'magnitude'})) && strcmpi(TsInfo.YScale, 'linear') && all(TF(:)>=0)
             TFmax = max(TF,[],1);
             iStart = find(diff(TFmax)>0,1);
             if ~isempty(iStart)
