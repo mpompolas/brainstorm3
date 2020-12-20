@@ -73,10 +73,12 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
     jPanelFOOOF.setVisible(0);
         % Radio: Select function to apply on top of the TF values
         jButtonGroup = ButtonGroup();
+        jRadioFOverlay = gui_component('Radio', jPanelFOOOF, 'br', 'Overlay',      jButtonGroup, '', @DisplayOptions_Callback);
         jRadioFSpectrum = gui_component('Radio', jPanelFOOOF, 'br', 'Spectrum',      jButtonGroup, '', @DisplayOptions_Callback);
         jRadioFModel   = gui_component('Radio', jPanelFOOOF, 'br', 'FOOOF Model',  jButtonGroup, '', @DisplayOptions_Callback);
         jRadioFAperiodic   = gui_component('Radio', jPanelFOOOF, 'br', 'Aperiodic only', jButtonGroup, '', @DisplayOptions_Callback);
         jRadioFPeaks   = gui_component('Radio', jPanelFOOOF, 'br', 'Peaks only', jButtonGroup, '', @DisplayOptions_Callback);
+        jRadioFError = gui_component('Radio', jPanelFOOOF, 'br', 'Frequency-wise error', jButtonGroup, '', @DisplayOptions_Callback);
     jPanelNew.add(jPanelFOOOF);
     
     % ===== PAC: PAC/FLOW/FHIGH =====
@@ -179,11 +181,13 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
     jCheckHideEdge.setEnabled(0);
     jCheckHighRes.setEnabled(0);
     
+    jRadioFOverlay.setSelected(1);
+    jRadioFOverlay.setEnabled(0);
     jRadioFSpectrum.setEnabled(0);
-    jRadioFSpectrum.setSelected(1);
     jRadioFModel.setEnabled(0);
     jRadioFAperiodic.setEnabled(0);
     jRadioFPeaks.setEnabled(0);
+    jRadioFError.setEnabled(0);
     
     % Create the BstPanel object that is returned by the function
     % => constructor BstPanel(jHandle, panelName, sControls)
@@ -203,10 +207,12 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
                                   'jRadioFunMag',           jRadioFunMag, ...
                                   'jRadioFunLog',           jRadioFunLog, ...
                                   'jRadioFunPhase',         jRadioFunPhase, ...
-                                  'jRadioFSpectrum',      jRadioFSpectrum, ...
-                                  'jRadioFModel',         jRadioFModel, ...
-                                  'jRadioFAperiodic',     jRadioFAperiodic, ...
-                                  'jRadioFPeaks',         jRadioFPeaks, ...
+                                  'jRadioFSpectrum',        jRadioFSpectrum, ...
+                                  'jRadioFOverlay',         jRadioFOverlay, ...
+                                  'jRadioFModel',           jRadioFModel, ...
+                                  'jRadioFAperiodic',       jRadioFAperiodic, ...
+                                  'jRadioFPeaks',           jRadioFPeaks, ...
+                                  'jRadioFError',           jRadioFError, ...
                                   'jRadioPacMax',           jRadioPacMax, ...
                                   'jRadioPacFlow',          jRadioPacFlow, ...
                                   'jRadioPacFhigh',         jRadioPacFhigh, ...
@@ -329,10 +335,12 @@ function UpdatePanel(hFig)
         ctrl.jRadioFunMag.setEnabled(0);
         ctrl.jRadioFunLog.setEnabled(0);
         ctrl.jRadioFunPhase.setEnabled(0);
+        ctrl.jRadioFOverlay.setEnabled(0);
         ctrl.jRadioFSpectrum.setEnabled(0);
         ctrl.jRadioFModel.setEnabled(0);
         ctrl.jRadioFAperiodic.setEnabled(0);
         ctrl.jRadioFPeaks.setEnabled(0);
+        ctrl.jRadioFError.setEnabled(0);
         ctrl.jCheckHideEdge.setEnabled(0);
         ctrl.jCheckHighRes.setEnabled(0);
         ctrl.jPanelSelect.setVisible(0);
@@ -369,10 +377,12 @@ function UpdatePanel(hFig)
         ctrl.jRadioFunMag.setEnabled(0);
         ctrl.jRadioFunLog.setEnabled(0);
         ctrl.jRadioFunPhase.setEnabled(0);
+        ctrl.jRadioFOverlay.setEnabled(0);
         ctrl.jRadioFSpectrum.setEnabled(0);
         ctrl.jRadioFModel.setEnabled(0);
         ctrl.jRadioFAperiodic.setEnabled(0);
         ctrl.jRadioFPeaks.setEnabled(0);
+        ctrl.jRadioFError.setEnabled(0);
         ctrl.jCheckHideEdge.setEnabled(0);
         ctrl.jCheckHighRes.setEnabled(0);
         ctrl.jPanelFunction.setVisible(0);
@@ -431,22 +441,33 @@ function UpdatePanel(hFig)
             ctrl.jPanelFunction.setVisible(1);
             % If current figure is a FOOOF PSD
             if isfield(GlobalData.DataSet(iDS).Timefreq(iTimefreq).Options, 'FOOOF') && ~isempty(GlobalData.DataSet(iDS).Timefreq(iTimefreq).Options.FOOOF)
+                ctrl.jRadioFOverlay.setEnabled(1); 
                 ctrl.jRadioFSpectrum.setEnabled(1);
                 ctrl.jRadioFModel.setEnabled(1);
                 ctrl.jRadioFAperiodic.setEnabled(1);
                 ctrl.jRadioFPeaks.setEnabled(1);
+                ctrl.jRadioFError.setEnabled(1);
                 switch TfInfo.FOOOFDisp
+                    case 'overlay', ctrl.jRadioFOverlay.setSelected(1); 
                     case 'spectrum', ctrl.jRadioFSpectrum.setSelected(1);
                     case 'model', ctrl.jRadioFModel.setSelected(1);
                     case 'aperiodic', ctrl.jRadioFAperiodic.setSelected(1);
                     case 'peaks', ctrl.jRadioFPeaks.setSelected(1);
+                    case 'error' 
+                        ctrl.jRadioFError.setSelected(1);
+                        % All display options can be useful here as well.
+                        %ctrl.jRadioFunPower.setEnabled(0);
+                        %ctrl.jRadioFunMag.setEnabled(0);
+                        %ctrl.jRadioFunLog.setEnabled(1);
                 end
             else
-                ctrl.jRadioFSpectrum.setSelected(1);
+                ctrl.jRadioFOverlay.setSelected(1);
+                ctrl.jRadioFOverlay.setEnabled(0); 
                 ctrl.jRadioFSpectrum.setEnabled(0);
                 ctrl.jRadioFModel.setEnabled(0);
                 ctrl.jRadioFAperiodic.setEnabled(0);
                 ctrl.jRadioFPeaks.setEnabled(0);
+                ctrl.jRadioFError.setEnabled(0);
             end                
         end
 
@@ -597,7 +618,8 @@ function sOptions = GetDisplayOptions()
             'DisplayInwardMeasure', 0, ...
             'DisplayBothMeasure', 1, ...
             'DisplayBidirectionalMeasure', 0, ...
-            'MeasureAnatomicalFilter', 0);
+            'MeasureAnatomicalFilter', 0, ...
+            'FOOOFDisp', 'overlay');
         return
     end
     % Get current panel figure
@@ -630,7 +652,9 @@ function sOptions = GetDisplayOptions()
         sOptions.Function = 'other';
     end
     % Get FOOOF display specifics 
-    if ctrl.jRadioFSpectrum.isSelected()
+    if ctrl.jRadioFOverlay.isSelected()
+        sOptions.FOOOFDisp = 'overlay';
+    elseif ctrl.jRadioFSpectrum.isSelected()
         sOptions.FOOOFDisp = 'spectrum';
     elseif ctrl.jRadioFModel.isSelected()
         sOptions.FOOOFDisp = 'model';
@@ -638,6 +662,8 @@ function sOptions = GetDisplayOptions()
         sOptions.FOOOFDisp = 'aperiodic';
     elseif ctrl.jRadioFPeaks.isSelected()
         sOptions.FOOOFDisp = 'peaks';
+    elseif ctrl.jRadioFError.isSelected()
+        sOptions.FOOOFDisp = 'error';
     end
     
     % Hide edge effects / Resolution
@@ -725,6 +751,7 @@ function SetDisplayOptions(sOptions)
                 bst_set('LastPsdDisplayFunction', sOptions.Function);
             end
         end
+        TfInfo.isFooofDispChanged = ~isequal(TfInfo.FOOOFDisp, sOptions.FOOOFDisp);
         TfInfo.FOOOFDisp  = sOptions.FOOOFDisp;
         TfInfo.HideEdgeEffects = sOptions.HideEdgeEffects;
         TfInfo.HighResolution  = sOptions.HighResolution;
@@ -737,7 +764,7 @@ function SetDisplayOptions(sOptions)
     bst_progress('start', 'Time-frequency tab', 'Updating figures...');
     switch (GlobalData.DataSet(iDS).Figure(iFig).Id.Type)
         case 'Topography', figure_topo('UpdateTopoPlot', iDS, iFig);
-        case 'Spectrum',   figure_spectrum('DisplayOptionsChangedCallback', hFig);           
+        case 'Spectrum',   figure_spectrum('UpdateFigurePlot', hFig, 1);           
         case '3DViz',      panel_surface('UpdateSurfaceData', hFig);
         case 'MriViewer',  panel_surface('UpdateSurfaceData', hFig);
         case 'Connect',    figure_connect('UpdateFigurePlot', hFig);
@@ -777,14 +804,21 @@ function SetDisplayOptions(sOptions)
             % If there is a selected RowName and if it was updated: Try updating other figures   (Skip update for RefRowName change)
             if ~isempty(sOptions.RowName) && ~isequal(sOptions.RowName, prevRowName) && isempty(TfInfo.RefRowName)
                 % Find other similar figures that could be updated
-                hFigOthers = bst_figures('GetFiguresByType', 'Timefreq');
+                hFigOthers = bst_figures('GetFiguresByType', {'Timefreq','Spectrum','Pac'});
                 hFigOthers = setdiff(hFigOthers, hFig);
                 for i = 1:length(hFigOthers)
                     % Get figure configuration
                     TfInfoOther = getappdata(hFigOthers(i), 'Timefreq');
+                    if iscell(TfInfoOther.RowName) && (length(TfInfoOther.RowName) == 1)
+                        otherRowName = TfInfoOther.RowName{1};
+                    elseif ischar(TfInfoOther.RowName)
+                        otherRowName = TfInfoOther.RowName;
+                    else
+                        otherRowName = [];
+                    end
                     % Check that the figure had the same initial RowName selection
                     % (and skip the figures showing the same file, to allow the change of row for a cloned figure)
-                    if isempty(TfInfoOther) || ~isequal(TfInfoOther.RowName, prevRowName) || isequal(TfInfo.FileName, TfInfoOther.FileName)
+                    if isempty(TfInfoOther) || ~isequal(otherRowName, prevRowName) || (isequal(TfInfo.FileName, TfInfoOther.FileName) && isequal(TfInfo.DisplayMode, TfInfoOther.DisplayMode))
                         continue;
                     end
                     % Get loaded timefreq file
@@ -795,10 +829,22 @@ function SetDisplayOptions(sOptions)
                     % If the new destination RowName also exists in this file: Update figure
                     if ismember(sOptions.RowName, GlobalData.DataSet(iDS).Timefreq(iTimefreq).RowNames)
                         % Update figure description
-                        TfInfoOther.RowName = sOptions.RowName;
+                        if iscell(TfInfoOther.RowName)
+                            TfInfoOther.RowName{1} = sOptions.RowName;
+                        else
+                            TfInfoOther.RowName = sOptions.RowName;
+                        end
                         setappdata(hFigOthers(i), 'Timefreq', TfInfoOther);
                         % Redraw this figure
-                        figure_timefreq('UpdateFigurePlot', hFigOthers(i), 1);
+                        FigureId = getappdata(hFigOthers(i), 'FigureId');
+                        switch (FigureId.Type)
+                            case 'Timefreq'
+                                figure_timefreq('UpdateFigurePlot', hFigOthers(i), 1);
+                            case 'Spectrum'
+                                figure_spectrum('UpdateFigurePlot', hFigOthers(i), 1);
+                            case 'Pac'
+                                figure_pac('UpdateFigurePlot', hFigOthers(i));
+                        end
                     end
                 end
             end
@@ -950,7 +996,7 @@ function SetSelectedRowName(hFig, newRowName) %#ok<DEFNU>
     else
         iCurRow = TfInfo.RowName;
     end
-    % Get new row
+    % Get new row index
     if strcmpi(newRowName, 'downarrow')
         iNewRow = min(iCurRow + 1, length(RowNames));
     elseif strcmpi(newRowName, 'uparrow')
@@ -958,32 +1004,19 @@ function SetSelectedRowName(hFig, newRowName) %#ok<DEFNU>
     else
         iNewRow = find(strcmpi(RowNames, newRowName));
     end
-    % Update figure structure
-    if ~isempty(iNewRow)
-        if iscell(RowNames)
-            TfInfo.RowName = RowNames{iNewRow(1)};
-        else
-            TfInfo.RowName = RowNames(iNewRow(1));
-        end
-        setappdata(hFig, 'Timefreq', TfInfo);
+    if isempty(iNewRow)
+        return;
     end
-    % If row selection was modified: Update figure
-    if ~strcmpi(oldRowName, TfInfo.RowName)
-        FigureId = getappdata(hFig, 'FigureId');
-        % Redraw figure
-        switch (FigureId.Type)
-            case 'Timefreq'
-                figure_timefreq('UpdateFigurePlot', hFig);
-            case 'Spectrum'
-                figure_spectrum('UpdateFigurePlot', hFig, 1);
-            case 'Pac'
-                figure_pac('UpdateFigurePlot', hFig);
-            case 'Connect'
-                warning('todo');
-        end
-        % Update panel
-        UpdatePanel(hFig);
+    % Get new row name
+    if iscell(RowNames)
+        NewRowName = RowNames{iNewRow(1)};
+    else
+        NewRowName = RowNames(iNewRow(1));
     end
+    % Update Display panel options
+    sOptions = GetDisplayOptions();
+    sOptions.RowName = NewRowName;
+    SetDisplayOptions(sOptions);
 end
 
 

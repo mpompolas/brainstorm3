@@ -9,6 +9,7 @@ function varargout = process_fem_mesh( varargin )
 %             NewFemFile = process_fem_mesh('SwitchHexaTetra', FemFile)
 %                 errMsg = process_fem_mesh('InstallIso2mesh', isInteractive)
 %                 errMsg = process_fem_mesh('InstallBrain2mesh', isInteractive)
+%                 errMsg = process_fem_mesh('InstallRoast', isInteractive)
 
 % @=============================================================================
 % This function is part of the Brainstorm software:
@@ -581,8 +582,6 @@ function [isOk, errMsg] = Compute(iSubject, iMris, isInteractive, OPTIONS)
             elem(:,end) = reshape(iRelabel(elem(:,end)), [], 1);
             % Name tissue labels
             TissueLabels = {'white','gray','csf','skull','scalp'};
-            
-            
         case 'simnibs'
             disp(['FEM> T1 MRI: ' T1File]);
             disp(['FEM> T2 MRI: ' T2File]);
@@ -607,6 +606,26 @@ function [isOk, errMsg] = Compute(iSubject, iMris, isInteractive, OPTIONS)
                 end
             end
 
+<<<<<<<< HEAD:toolbox/process/functions/process_fem_mesh.m
+========
+            % ===== VERIFY FIDUCIALS IN T1 MRI =====
+            % Load MRI file
+            sMriT1 = in_mri_bst(T1File);
+            % If the SCS transformation is not defined: compute MNI transformation to get a default one
+            if isempty(sMriT1) || ~isfield(sMriT1, 'SCS') || ~isfield(sMriT1.SCS, 'NAS') || ~isfield(sMriT1.SCS, 'LPA') || ~isfield(sMriT1.SCS, 'RPA') || (length(sMriT1.SCS.NAS)~=3) || (length(sMriT1.SCS.LPA)~=3) || (length(sMriT1.SCS.RPA)~=3) || ~isfield(sMriT1.SCS, 'R') || isempty(sMriT1.SCS.R) || ~isfield(sMriT1.SCS, 'T') || isempty(sMriT1.SCS.T)
+                % Issue warning
+                bst_report('Warning', 'process_generate_fem', [], 'Missing NAS/LPA/RPA: Computing the MNI transformation to get default positions.');
+                % Compute MNI transformation
+                [sMriT1, errNorm] = bst_normalize_mni(T1File);
+                % Handle errors
+                if ~isempty(errNorm)
+                    errMsg = [errMsg 10 'Error trying to compute the MNI transformation: ' 10 errNorm 10 ...
+                        'The surfaces will not be properly aligned with the MRI.'];
+                    return;
+                end
+            end
+            
+>>>>>>>> master:toolbox/process/functions/process_generate_fem.m
             % === SAVE T1 MRI AS NII ===
             bst_progress('text', 'Exporting MRI...');
             % Empty temporary folder, otherwise it may reuse previous files in the folder
@@ -637,13 +656,13 @@ function [isOk, errMsg] = Compute(iSubject, iMris, isInteractive, OPTIONS)
             else % call the default option, where VertexDensity is fixed to 0.5
                 strCall = ['headreco all --noclean  ' subjid ' ' T1Nii ' ' T2Nii];
             end
-            [status, result] = system(strCall);
+            status = system(strCall)
             % Restore working directory
             cd(curDir);
             % If SimNIBS returned an error
             if (status ~= 0)
                 errMsg = ['SimNIBS call: ', strrep(strCall, ' "', [10 '      "']),  10 10 ...
-                          'SimNIBS error #' num2str(status) ': ' 10 result];
+                          'SimNIBS error #' num2str(status) ': See command window.'];
                 return;
             end
                   

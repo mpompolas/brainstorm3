@@ -1,8 +1,27 @@
 ---------------------------------------------------------------
+November 2020
+- Python: New integration with Python and MNE-Python based on CPython
+- Distrib: Compiled version now includes NIRSTORM, Brain2Mesh and Iso2Mesh
+- Anatomy: Updated CAT12 to version r1733
+- Anatomy: Support for volume atlases in the database and the MRI viewer
+- Anatomy: Import all atlases from FreeSurfer, CAT, BrainVISA, BrainSuite
+- Anatomy: New automated import (15000 vertices, MNI fiducials)
+---------------------------------------------------------------
+October 2020
+- Major bug fix: Changed units in PSD computation
+- New process: Simulate recordings from dipoles
+- Anatomy: Standard EEG caps included with infant templates
+- Anatomy: FreeSurfer import now loads all the .annot files in /label
+- ephys: Phase locking circular plots 
+- Process: Apply montage: Include processing of headmodels
+- Python: More generic initialization, using pyenv when available
+---------------------------------------------------------------
 September 2020
 - GUI: Added Y-log scale for spectrum figures
 - IO: Added export to TSV, with optional transposition for CSV/TSV/Excel
 - IO: Import Nicolet exported events (.txt)
+- Simulations: New tutorial and developments
+- MNE-Python: Wrapper for mne.preprocessing.maxwell_filter
 ---------------------------------------------------------------
 August 2020
 - Anatomy: Display surfaces/sources as flat 2D maps (Mollweide projection)

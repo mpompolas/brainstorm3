@@ -30,7 +30,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('SpmDir')                : Full path to a local installation of SPM
 %    - bst_get('BrainSuiteDir')         : Full path to a local installation of BrainSuite
 %    - bst_get('SpmTpmAtlas')           : Full path to the SPM atlas TPM.nii
-%    - bst_get('PythonConfig')          : Configuration of the python environment from Matlab
+%    - bst_get('PythonExe')             : Path to the python executable
 %
 % ====== PROTOCOLS ====================================================================
 %    - bst_get('iProtocol')             : Indice of current protocol 
@@ -123,6 +123,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('isGUI')          : Return 1 if the Brainstorm interface is displayed
 %    - bst_get('GuiLevel')       : Return GUI level:  -1=server, 0=nogui, 1=normal, 2=autopilot
 %    - bst_get('ScreenDef')      : Get screens configuration
+%    - bst_get('DecorationSize') : Get dimensions of the windows decorations
 %    - bst_get('Layout')         : Configuration of the main Brainstorm window
 %    - bst_get('Layout', prop)   : Get one property in the layout properties
 %    - bst_get('PanelContainer')                : Display list of registered panel containers
@@ -139,7 +140,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('MatlabVersion')         : Matlab version (version number * 100, eg. 801)
 %    - bst_get('MatlabReleaseName')     : Matlab version (release name, eg. "R2014a")
 %    - bst_get('JavaVersion')           : Java version
-%    - bst_get('isJavacomponent')       : Returns 1 if javacomponent is available (Matlab < 2020a), 0 otherwise
+%    - bst_get('isJavacomponent')       : Returns 1 if javacomponent is available (Matlab < 2019b), 0 otherwise
 %    - bst_get('SystemMemory')          : Amount of memory available, in Mb
 %    - bst_get('ByteOrder')             : {'l','b'} - Byte order used to read and save binary files 
 %    - bst_get('TSDisplayMode')         : {'butterfly','column'}
@@ -190,7 +191,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('ContactSheetOptions')     : Display options for contact sheets
 %    - bst_get('ProcessOptions')          : Options related with the data processing
 %    - bst_get('CustomColormaps')         : Gets the list of user defined colormaps
-%    - bst_get('MriOptions')              : If 1, flip left-right the views of MRI slices
+%    - bst_get('MriOptions')              : Configuration for MRI display
 %    - bst_get('DigitizeOptions')         : Digitizer options
 %    - bst_get('ReadOnly')                : Read only interface
 %    - bst_get('NodelistOptions')         : Structure with the options for file selection in the Process1 and Process2 panels
@@ -287,8 +288,8 @@ switch contextName
         end
         
     case 'isJavacomponent'
-        % After Matlab 2020a, javacomponent() and JavaFrame property have been deprecated
-        argout1 = (bst_get('MatlabVersion') < 908);
+        % After Matlab 2019b, javacomponent() and JavaFrame property have been deprecated
+        argout1 = (bst_get('MatlabVersion') <= 906);
         
     case 'SystemMemory'
         maxvar = [];
@@ -2304,8 +2305,10 @@ switch contextName
             sTemplates = sTemplates(iAnat);
         end
         % Sort in alphabetical order
-        [tmp__, I] = sort_nat({sTemplates(2:end).Name});
-        sTemplates = sTemplates([1, I+1]);
+        if ~isempty(sTemplates)
+            [tmp__, I] = sort_nat({sTemplates(2:end).Name});
+            sTemplates = sTemplates([1, I+1]);
+        end
         % Return defaults list
         argout1 = sTemplates;
         
@@ -2313,7 +2316,19 @@ switch contextName
 %% ==== EEG DEFAULTS ====
     % Returns an array of struct(fullpath, name) of all the Brainstorm eeg nets defaults
     % Usage: EegDefaults = bst_get('EegDefaults')
+    %        EegDefaults = bst_get('EegDefaults', TemplateName=[], SetupName=[])
     case 'EegDefaults'
+        % Parse inputs
+        if (nargin >= 3)
+            SetupName = varargin{3};
+        else
+            SetupName = [];
+        end
+        if (nargin >= 2)
+            TemplateName = varargin{2};
+        else
+            TemplateName = [];
+        end
         % Get templates from the brainstorm3 folder
         progDir   = bst_fullfile(bst_get('BrainstormDefaultsDir'), 'eeg');
         progFiles = dir(bst_fullfile(progDir, '*'));
@@ -2333,16 +2348,27 @@ switch contextName
             if ~isdir(dirList{iDir}) || isempty(fBase) || strcmpi(fBase(1),'.')
                 continue;
             end
+            % Skip if it is not the requested template
+            if ~isempty(TemplateName) && ~strcmpi(fBase, TemplateName)
+                continue;
+            end
             % Get files list
             fileList = dir(bst_fullfile(dirList{iDir}, 'channel*.mat'));
             defaultsList = repmat(struct('fullpath','', 'name',''), 0);
             % Find all the valid defaults (channel files)
             for iFile = 1:length(fileList)
-                defaultsList(iFile).fullpath = bst_fullfile(dirList{iDir}, fileList(iFile).name);
                 [tmp__, baseName] = bst_fileparts(fileList(iFile).name);
-                defaultsList(iFile).name = strrep(baseName, 'channel_', '');
-                defaultsList(iFile).name = strrep(defaultsList(iFile).name, '_channel', '');
-                defaultsList(iFile).name = strrep(defaultsList(iFile).name, '_', ' ');
+                baseName = strrep(baseName, 'channel_', '');
+                baseName = strrep(baseName, '_channel', '');
+                baseName = strrep(baseName, '_', ' ');
+                % Skip if it is not the requested template
+                if ~isempty(SetupName) && ~strcmpi(baseName, SetupName)
+                    continue;
+                end
+                % Add to list of templates
+                iNewDefault = length(defaultsList) + 1;
+                defaultsList(iNewDefault).fullpath = bst_fullfile(dirList{iDir}, fileList(iFile).name);
+                defaultsList(iNewDefault).name = baseName;
             end
             % Add files list to defaults list
             if ~isempty(defaultsList)
@@ -2430,6 +2456,12 @@ switch contextName
             argout1 = [];
         else
             argout1 = GlobalData.Program.ScreenDef;
+        end
+    case 'DecorationSize'
+        if isempty(GlobalData) || isempty(GlobalData.Program) || ~isfield(GlobalData.Program, 'DecorationSize')
+            argout1 = [];
+        else
+            argout1 = GlobalData.Program.DecorationSize;
         end
     case 'Layout'
         % Default or current layout structure
@@ -2696,25 +2728,26 @@ switch contextName
         % Return the preferred location: .brainstorm/defaults/spm/TPM.nii
         argout1 = tpmUser;
         
-    case 'PythonConfig'
-        defPref = struct(...
-            'PythonExe',  '', ...
-            'PythonPath', 0, ...
-            'QtDir',      '');
-        argout1 = FillMissingFields(contextName, defPref);
-        % Check that the python executable is available
-        if ~isempty(argout1.PythonExe) && ~file_exist(argout1.PythonExe)
-            disp(['Error: Python executable not found: ' argout1.PythonExe]);
-            argout1.PythonExe = '';
-        elseif ~ischar(argout1.PythonExe)
-            argout1.PythonExe = '';
+    case 'PythonExe'
+        % Get saved value
+        if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'PythonExe') && ~isempty(GlobalData.Preferences.PythonExe)
+            if file_exist(GlobalData.Preferences.PythonExe)
+                argout1 = GlobalData.Preferences.PythonExe;
+            else
+                disp(['BST> Error: Python executable not found: ' GlobalData.Preferences.PythonExe]);
+                argout1 = [];
+            end
+        else
+            argout1 = [];
         end
-        % Check the validity of the other values
-        if ~ischar(argout1.PythonPath)
-            argout1.PythonPath = '';
-        end
-        if ~ischar(argout1.QtDir)
-            argout1.QtDir = '';
+        % If not defined in Brainstorm, but set in Matlab
+        if isempty(argout1)
+            [pyVer, PythonExe] = bst_python_ver();
+            if ~isempty(PythonExe) && file_exist(PythonExe)
+                disp(['BST> Found Python executable: ' PythonExe]);
+                argout1 = PythonExe;
+                bst_set('PythonExe', PythonExe);
+            end
         end
         
     case 'ElectrodeConfig'
@@ -3154,7 +3187,8 @@ switch contextName
             'OverlaySmooth',    0, ...
             'InterpDownsample', 3, ...
             'DistanceThresh',   6, ...
-            'UpsampleImage',    0);
+            'UpsampleImage',    0, ...
+            'DefaultAtlas',     []);
         argout1 = FillMissingFields(contextName, defPref);
         
     case 'DigitizeOptions'
@@ -3243,6 +3277,7 @@ switch contextName
                     {'*'},             'MRI: DICOM (SPM converter)',           'DICOM-SPM'; ...
                     {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'All MRI files (subject space)', 'ALL'; ...
                     {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'All MRI files (MNI space)',     'ALL-MNI'; ...
+                    {'.mri', '.fif', '.img', '.ima', '.nii', '.mgh', '.mgz', '.mnc', '.mni', '.gz', '_subjectimage'}, 'Volume atlas (MNI space)',      'ALL-MNI-ATLAS'; ...
                    };
             case 'mriout'
                 argout1 = {...
@@ -3254,16 +3289,18 @@ switch contextName
                    };
             case 'anatin'
                 argout1 = {...
-                    {'.folder'}, 'FreeSurfer folder', 'FreeSurfer'; ...
-                    {'.folder'}, 'FreeSurfer folder + Thickness maps', 'FreeSurfer+Thick'; ...
-                    {'.folder'}, 'BrainSuite folder', 'BrainSuite'; ...
-                    {'.folder'}, 'BrainVISA folder', 'BrainVISA'; ...
-                    {'.folder'}, 'CAT12 folder', 'CAT12'; ...
-                    {'.folder'}, 'CAT12 folder + Thickness maps', 'CAT12+Thick'; ...
-                    {'.folder'}, 'CIVET folder', 'CIVET'; ...
-                    {'.folder'}, 'CIVET folder + Thickness maps', 'CIVET+Thick'; ...
+                    {'.folder'}, 'FreeSurfer', 'FreeSurfer-fast'; ...
+                    {'.folder'}, 'FreeSurfer + Volume atlases', 'FreeSurfer'; ...
+                    {'.folder'}, 'FreeSurfer + Volume atlases + Thickness', 'FreeSurfer+Thick'; ...
+                    {'.folder'}, 'BrainSuite', 'BrainSuite-fast'; ...
+                    {'.folder'}, 'BrainSuite + Volume atlases', 'BrainSuite'; ...
+                    {'.folder'}, 'BrainVISA', 'BrainVISA'; ...
+                    {'.folder'}, 'CAT12', 'CAT12'; ...
+                    {'.folder'}, 'CAT12 + Thickness', 'CAT12+Thick'; ...
+                    {'.folder'}, 'CIVET', 'CIVET'; ...
+                    {'.folder'}, 'CIVET + Thickness', 'CIVET+Thick'; ...
                     {'.folder'}, 'HCP MEG/anatomy (pipeline v3)', 'HCPv3'; ...
-                    {'.folder'}, 'SimNIBS folder', 'SimNIBS'; ...
+                    {'.folder'}, 'SimNIBS', 'SimNIBS'; ...
                    };
             case 'source4d'
                 argout1 = {...
@@ -3823,13 +3860,13 @@ switch contextName
             elseif (MatlabVersion <= 803)
                 jf = get(handle(hFig), 'javaframe');
                 jFrame = jf.fHG1Client.getWindow();
-            elseif (MatlabVersion <= 908)
+            elseif (MatlabVersion < 907)    % Matlab >= 2019b deprecated the JavaFrame property
                 warning('off', 'MATLAB:HandleGraphics:ObsoletedProperty:JavaFrame');
                 jf = get(hFig, 'javaframe');
                 warning('on', 'MATLAB:HandleGraphics:ObsoletedProperty:JavaFrame');
                 jFrame = jf.fHG2Client.getWindow();
             else
-                disp('BST> Error: Matlab 2020a deprecated the JavaFrame property.');
+                disp('BST> Error: Matlab 2019b deprecated the JavaFrame property.');
             end
         catch
             disp('BST> Warning: Cannot get the JavaFrame property for the selected figure.');

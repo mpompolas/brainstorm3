@@ -100,8 +100,8 @@ function [hFig, Handles] = CreateFigure(FigureId) %#ok<DEFNU>
     setappdata(hFig, 'isStatic',    1);
     setappdata(hFig, 'isStaticFreq',1);
     setappdata(hFig, 'Colormap',    db_template('ColormapInfo'));
-%     setappdata(hFig, 'ElectrodeDisplay', struct('DisplayMode', 'sphere'));
     setappdata(hFig, 'ElectrodeDisplay', struct('DisplayMode', 'depth'));
+    setappdata(hFig, 'AnatAtlas', []);
     
     % ===== AXES =====
     % Sagittal
@@ -783,23 +783,7 @@ function ButtonZoom_Callback(hFig, action, param)
             set([hLabelOrientL, hLabelOrientR], 'Visible', 'off');
         end
         set(hAxes, 'XLim', XLim, 'YLim', YLim);
-        
-        
-%         % Update zoom factor
-%         Xratio = axesLen(i,1) ./ AxesPos(3);
-%         Yratio = axesLen(i,2) ./ AxesPos(4);
-%         if (Yratio > Xratio)
-%             set(hAxes, 'YLim', YLim);
-%         else
-%             set(hAxes, 'XLim', XLim);
-%         end
-        
-        % % Move orientation labels
-        % set(hLabelOrientL, 'Position', [XLim(1) + .05*(XLim(2)-XLim(1)), YLim(1) + .05*(YLim(2)-YLim(1)), 1]);
-        % set(hLabelOrientR, 'Position', [XLim(1) + .95*(XLim(2)-XLim(1)), YLim(1) + .05*(YLim(2)-YLim(1)), 1]);
-        
     end
-    
 end
 
 %% ===== BUTTON SET COORDINATES =====
@@ -915,7 +899,22 @@ function DisplayFigurePopup(hFig)
 %         jItem2.setSelected(MriOptions.InterpDownsample == 2);
 %         jItem3.setSelected(MriOptions.InterpDownsample == 3);
     end
-    jPopup.addSeparator();
+    % Anatomical atlas
+    AnatAtlas = getappdata(hFig, 'AnatAtlas');
+    if ~isempty(AnatAtlas)
+        [AtlasNames, AtlasFiles, iAtlas] = GetVolumeAtlases(hFig);
+        jMenuAtlas = gui_component('Menu', jPopup, [], 'Anatomical atlas', IconLoader.ICON_ANATOMY, [], []);
+        for i = 1:length(AtlasNames)
+            if (i == length(AtlasNames))
+                jMenuAtlas.addSeparator();
+            end
+            jCheck = gui_component('radiomenuitem', jMenuAtlas, [], AtlasNames{i}, [], [], @(h,ev)SetVolumeAtlas(hFig, AtlasNames{i}));
+            if (i == iAtlas)
+                jCheck.setSelected(1);
+            end
+        end
+        jPopup.addSeparator();
+    end
     % Set fiducials
     if Handles.isEditFiducials
         jMenuEdit = gui_component('Menu', jPopup, [], 'Edit fiducial positions', IconLoader.ICON_EDIT, [], []);
@@ -1163,10 +1162,20 @@ function SetLocation(cs, sMri, Handles, XYZ)
     XYZ(3) = bst_saturate(XYZ(3), [1, size(sMri.Cube,3)]);
     % Round coordinates
     XYZ = round(XYZ);
-    % Set sliders values
-    Handles.jSliderSagittal.setValue(XYZ(1));
-    Handles.jSliderCoronal.setValue(XYZ(2));
-    Handles.jSliderAxial.setValue(XYZ(3));
+    % Update sliders positions, with the callbacks disabled
+    jSliders = [Handles.jSliderSagittal, Handles.jSliderCoronal, Handles.jSliderAxial];
+    dimUpdate = [];
+    for i = 1:3
+        if (jSliders(i).getValue() ~= XYZ(i))
+            dimUpdate(end+1) = i;
+            bakCb = get(jSliders(i), 'StateChangedCallback');
+            set(jSliders(i), 'StateChangedCallback', []);
+            jSliders(i).setValue(double(XYZ(i)));
+            set(jSliders(i), 'StateChangedCallback', bakCb);
+        end
+    end
+    % Update figure
+    UpdateMriDisplay(Handles.hFig, dimUpdate);
 end
 
 
@@ -1343,12 +1352,26 @@ function UpdateCoordinates(sMri, Handles)
     if (all(voxXYZ >= 1) && all(voxXYZ <= mriSize))
         % Try to get the values from the overlay mask
         TessInfo = getappdata(Handles.hFig, 'Surface');
-        if ~isempty(TessInfo) && ~isempty(TessInfo.OverlayCube) && all(size(TessInfo.OverlayCube) == mriSize)
+        if ~isempty(TessInfo) && ~isempty(TessInfo.OverlayCubeLabels) && isequal(size(TessInfo.OverlayCubeLabels), mriSize) && ~isempty(TessInfo.OverlayLabels)
+            value = TessInfo.OverlayCubeLabels(voxXYZ(1), voxXYZ(2), voxXYZ(3));
+            iLabel = find([TessInfo.OverlayLabels{:,1}] == value);
+            if ~isempty(iLabel)
+                if TessInfo.isOverlayAtlas
+                    strValue = sprintf('%g: %s', value, TessInfo.OverlayLabels{iLabel,2});
+                else
+                    mriValue = sMri.Cube(voxXYZ(1), voxXYZ(2), voxXYZ(3), 1);
+                    strValue = sprintf('%s  |  value=%g', TessInfo.OverlayLabels{iLabel,2}, mriValue);
+                end
+            else
+                strValue = sprintf('value=%g', value);
+            end
+        elseif ~isempty(TessInfo) && ~isempty(TessInfo.OverlayCube) && isequal(size(TessInfo.OverlayCube), mriSize)
             value = TessInfo.OverlayCube(voxXYZ(1), voxXYZ(2), voxXYZ(3));
+            strValue = sprintf('value=%g', value);
         else
             value = sMri.Cube(voxXYZ(1), voxXYZ(2), voxXYZ(3), 1);
+            strValue = sprintf('value=%g', value);
         end
-        strValue = sprintf('value=%g', value);
     else
         strValue = '';
     end
@@ -1869,9 +1892,6 @@ function PlotSensors3D(iDS, iFig, Channel, ChanLoc)
         hElectrodeDepthA = patch(Opt{:}, ...
             'Vertices',  [VertMri(:,1), VertMri(:,2), Z],...
             'Parent',    Handles.axa);
-%         setappdata(hElectrodeDepthS, 'Z', VertMri(:,1));
-%         setappdata(hElectrodeDepthC, 'Z', VertMri(:,2));
-%         setappdata(hElectrodeDepthA, 'Z', VertMri(:,3));
     end
     
     % === ELECTRODES LABELS ===
@@ -1914,9 +1934,6 @@ function PlotSensors3D(iDS, iFig, Channel, ChanLoc)
             'Parent', Handles.axc);
         hElectrodeWireA = line(LocMri(:,1), LocMri(:,2), Z, Opt{:}, ...           
             'Parent', Handles.axa);
-%         setappdata(hElectrodeWireS, 'Z', LocMri(:,1));
-%         setappdata(hElectrodeWireC, 'Z', LocMri(:,2));
-%         setappdata(hElectrodeWireA, 'Z', LocMri(:,3));
     end
     
     % === GRID OF CONTACTS ===
@@ -1942,16 +1959,10 @@ function PlotSensors3D(iDS, iFig, Channel, ChanLoc)
         hElectrodeGridA = patch(Opt{:}, ...
             'Vertices', [VertMri(:,1), VertMri(:,2), Z],...
             'Parent',   Handles.axa);
-        % setappdata(hElectrodeGridS, 'Z', VertMri(:,1));
-        % setappdata(hElectrodeGridC, 'Z', VertMri(:,2));
-        % setappdata(hElectrodeGridA, 'Z', VertMri(:,3));
     end
     
     % === HIDE SENSORS ===
     GlobalData.DataSet(iDS).Figure(iFig).Handles.HiddenChannels = HiddenChannels;
-    
-    % Repaint selected sensors for this figure
-%     UpdateFigSelectedRows(iDS, iFig);
 end
 
 
@@ -2015,17 +2026,6 @@ end
 
 %% ===== PLOT POINT =====
 function hPt = PlotPoint(sMri, Handles, ptLocVox, ptColor, ptSize, UserData)
-%     % Small dots: selects them
-%     if (ptSize <= 4)
-%         clickFcnS = @(h,ev)SetLocation('mri', Handles.hFig, [], ptLocVox ./ 1000);
-%         clickFcnC = @(h,ev)SetLocation('mri', Handles.hFig, [], ptLocVox ./ 1000);
-%         clickFcnA = @(h,ev)SetLocation('mri', Handles.hFig, [], ptLocVox ./ 1000);
-%     % Large dots: like it was not clicked
-%     else
-%         clickFcnS = @(h,ev)MouseButtonDownAxes_Callback(Handles.hFig, Handles.axs, sMri, Handles);
-%         clickFcnC = @(h,ev)MouseButtonDownAxes_Callback(Handles.hFig, Handles.axc, sMri, Handles);
-%         clickFcnA = @(h,ev)MouseButtonDownAxes_Callback(Handles.hFig, Handles.axa, sMri, Handles);
-%     end
     % Plot point in three views: sagittal, coronal, axial
     Z = 7;
     hPt(1,1) = line(ptLocVox(2), ptLocVox(3), Z, ...
@@ -2289,9 +2289,6 @@ function UpdateVisibleSensors3D(hFig, slicesToUpdate)
             else
                 set(hElectrodeGrid, 'Visible', 'off');
             end
-%             Z = getappdata(hElectrodeGrid, 'Z');
-%             FaceVertexAlphaData = double(abs(Z - slicesLoc(iDim)) <= nTol);
-%             set(hElectrodeGrid, 'FaceVertexAlphaData', FaceVertexAlphaData);
         end
     end
 end
@@ -2441,54 +2438,10 @@ function [isCloseAccepted, MriFile] = SaveMri(hFig)
         return;
     end
     bst_progress('stop');
- 
-%     % ==== UPDATE OTHER MRI FILES ====
-%     if ~isempty(sMriOld) && (length(sSubject.Anatomy) > 1)
-%         % New fiducials
-%         s.SCS = sMri.SCS;
-%         s.NCS = sMri.NCS;
-%         % Update each MRI file
-%         for iAnat = 1:length(sSubject.Anatomy)
-%             % Skip the current one
-%             if (iAnat == iAnatomy)
-%                 continue;
-%             end
-%             % Save NCS and SCS structures
-%             updateMriFile = file_fullpath(sSubject.Anatomy(iAnat).FileName);
-%             bst_save(updateMriFile, s, 'v7', 1);
-%         end
-%     end
     
     % ==== REALIGN SURFACES ====
     if ~isempty(sMriOld)
         UpdateSurfaceCS({sSubject.Surface.FileName}, sMriOld, sMri);
-    end
-end
-
-
-%% ===== SAVE EEG =====
-function SaveEeg(hFig)
-    global GlobalData;
-    % Get figure and dataset
-    [hFig,iFig,iDS] = bst_figures('GetFigure', hFig);
-    if isempty(iDS) || isempty(GlobalData.DataSet(iDS).ChannelFile) || isempty(GlobalData.DataSet(iDS).Channel)
-        return;
-    end
-    % Get full file name
-    ChannelFile = file_fullpath(GlobalData.DataSet(iDS).ChannelFile);
-    % Load channel file
-    ChannelMat = in_bst_channel(ChannelFile);
-    error('check this');
-    % Check for differences with existing channel file
-    if ~isequal(ChannelMat.Channel, GlobalData.DataSet(iDS).Channel) || ~isequal(ChannelMat.IntraElectrodes, GlobalData.DataSet(iDS).IntraElectrodes)
-        % Update channel structure
-        ChannelMat.Channel = GlobalData.DataSet(iDS).Channel;
-        ChannelMat.IntraElectrodes = GlobalData.DataSet(iDS).IntraElectrodes;
-        % Save new channel file
-        bst_save(ChannelFile, ChannelMat, 'v7');
-        % Reload channel study
-        [sStudy, iStudy] = bst_get('Study', GlobalData.DataSet(iDS).StudyFile);
-        db_reload_studies(iStudy);
     end
 end
 
@@ -2961,5 +2914,110 @@ function Add3DView(hFig)
     end
 end
 
+
+%% ===== GET VOLUME ATLASES =====
+function [AtlasNames, AtlasFiles, iAtlas] = GetVolumeAtlases(hFig)
+    % Initialize returned variables
+    AtlasNames = [];
+    AtlasFiles = [];
+    iAtlas = [];
+    % Get subject info
+    SubjectFile = getappdata(hFig, 'SubjectFile');
+    sSubject = bst_get('Subject', SubjectFile);
+    % Find atlases based on the volume names
+    iAllAtlases = [];
+    for iAnat = 1:length(sSubject.Anatomy)
+        if any(~cellfun(@(c)isempty(strfind(sSubject.Anatomy(iAnat).Comment, c)), {'aseg', 'svreg', 'tissues'})) || ...
+           ~isempty(strfind(sSubject.Anatomy(iAnat).FileName, '_volatlas'))
+            iAllAtlases(end+1) = iAnat;
+        end
+    end
+    if isempty(iAllAtlases)
+        return;
+    end
+    AtlasNames = {sSubject.Anatomy(iAllAtlases).Comment};
+    AtlasFiles = {sSubject.Anatomy(iAllAtlases).FileName};
+    % Add an empty atlas
+    if ~isempty(AtlasNames)
+        AtlasNames{end+1} = 'none';
+        AtlasFiles{end+1} = 'none';
+    end
+    % Look for the atlas selected for this figure
+    AnatAtlas = getappdata(hFig, 'AnatAtlas');
+    if ~isempty(AnatAtlas)
+        iAtlas = find(strcmpi(AtlasNames, AnatAtlas));
+    end
+end
+
+%% ===== SET VOLUME ATLAS =====
+% USAGE:  SetVolumeAtlas(hFig, AnatAtlas)   % Set to a specific atlas
+%         SetVolumeAtlas(hFig)              % Set to default atlas
+function SetVolumeAtlas(hFig, AnatAtlas)
+    % Parse inputs
+    if (nargin < 2) || isempty(AnatAtlas)
+        AnatAtlas = [];
+    end
+    % Get default MRI display options
+    MriOptions = bst_get('MriOptions');
+    % Get surfaces list 
+    TessInfo = getappdata(hFig, 'Surface');
+    % Find the first anatomy entry
+    iTess = find(~isempty(strcmpi(TessInfo.Name, 'Anatomy')));
+    % Get available atlases for this figure
+    [AtlasNames, AtlasFiles] = GetVolumeAtlases(hFig);
+    if isempty(AtlasNames)
+        return;
+    end
+    % If atlas is not specified: pick the saved one, or Desikan-Killiany, or the first one
+    if isempty(AnatAtlas)
+        if ~isempty(MriOptions.DefaultAtlas) && ismember(MriOptions.DefaultAtlas, AtlasNames)
+            AnatAtlas = MriOptions.DefaultAtlas;
+        elseif ismember('aparc.DKTatlas+aseg', AtlasNames)
+            AnatAtlas = 'aparc.DKTatlas+aseg';
+        elseif ismember('aparc.a2009s+aseg.mgz', AtlasNames)
+            AnatAtlas = 'aparc.a2009s+aseg.mgz';
+        else
+            AnatAtlas = AtlasNames{1};
+        end
+    end
+    % Disable atlas
+    if strcmpi(AnatAtlas, 'none')
+        TessInfo(iTess).OverlayCubeLabels = [];
+        TessInfo(iTess).OverlayLabels = [];
+        TessInfo(iTess).isOverlayAtlas = 0;
+    % Select atlas
+    else
+        % Select atlas
+        iAtlas = find(strcmpi(AnatAtlas, AtlasNames));
+        if isempty(iAtlas)
+            disp(['BST> Error: Atlas "' AnatAtlas '" not available for this figure.']);
+            return;
+        end
+        % Load atlas volume
+        sMriAtlas = bst_memory('LoadMri', AtlasFiles{iAtlas});
+        if isempty(sMriAtlas)
+            return;
+        elseif isempty(sMriAtlas.Labels)
+            disp(['BST> Invalid atlas "' AnatAtlas '": does not contain any labels.']);
+            return;
+        end
+        % Save label information
+        TessInfo(iTess).OverlayCubeLabels = sMriAtlas.Cube;
+        TessInfo(iTess).OverlayLabels = sMriAtlas.Labels;
+        TessInfo(iTess).isOverlayAtlas = 0;
+    end
+    % Save surface info
+    setappdata(hFig, 'Surface', TessInfo);
+    % Save atlas for figure
+    setappdata(hFig, 'AnatAtlas', AnatAtlas);
+    % Save default value for future use
+    MriOptions.DefaultAtlas = AnatAtlas;
+    bst_set('MriOptions', MriOptions);
+    % Update coordinates display
+    sMri = panel_surface('GetSurfaceMri', hFig);
+    Handles = bst_figures('GetFigureHandles', hFig);
+    UpdateCoordinates(sMri, Handles);
+    drawnow;
+end
 
 

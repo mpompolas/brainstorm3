@@ -161,9 +161,16 @@ switch (lower(action))
             case 'anatomy'
                 % Get subject
                 iSubject = bstNodes(1).getStudyIndex();
+                iAnatomy = bstNodes(1).getItemIndex();
                 sSubject = bst_get('Subject', iSubject);
-                % Display it in MRI Viewer
-                view_mri(filenameRelative);
+                % Atlas: display as overlay on the default MRI
+                anatComment = lower(bstNodes(1).getComment());
+                if (iAnatomy > 1) && (~isempty(strfind(filenameRelative, '_volatlas')) || ~isempty(strfind(anatComment, 'aseg')) || ~isempty(strfind(anatComment, 'svreg')) || ~isempty(strfind(anatComment, 'tissues')))
+                    view_mri(sSubject.Anatomy(sSubject.iAnatomy).FileName, filenameRelative);
+                % MRI: Display in MRI viewer
+                else
+                    view_mri(filenameRelative);
+                end
     
             % ===== SURFACE ===== 
             % Mark/unmark (items selected : 1/category)
@@ -545,8 +552,8 @@ switch (lower(action))
                 if ~bst_get('ReadOnly') && ((iSubject == 0) || ~sSubject.UseDefaultAnat)
                     AddSeparator(jPopup);
                     % === IMPORT ===
-                    gui_component('MenuItem', jPopup, [], 'Import anatomy folder', IconLoader.ICON_ANATOMY, [], @(h,ev)bst_call(@import_anatomy, iSubject));
-                    gui_component('MenuItem', jPopup, [], 'Import MRI', IconLoader.ICON_ANATOMY, [], @(h,ev)bst_call(@import_mri, iSubject, [], [], 1));
+                    gui_component('MenuItem', jPopup, [], 'Import anatomy folder', IconLoader.ICON_ANATOMY, [], @(h,ev)bst_call(@import_anatomy, iSubject, 0));
+                    gui_component('MenuItem', jPopup, [], 'Import anatomy folder (auto)', IconLoader.ICON_ANATOMY, [], @(h,ev)bst_call(@import_anatomy, iSubject, 1));                    gui_component('MenuItem', jPopup, [], 'Import MRI', IconLoader.ICON_ANATOMY, [], @(h,ev)bst_call(@import_mri, iSubject, [], [], 1));
                     gui_component('MenuItem', jPopup, [], 'Import surfaces', IconLoader.ICON_SURFACE, [], @(h,ev)bst_call(@import_surfaces, iSubject));
                     gui_component('MenuItem', jPopup, [], 'Import fibers', IconLoader.ICON_FIBERS, [], @(h,ev)bst_call(@import_fibers, iSubject));
                     gui_component('MenuItem', jPopup, [], 'Convert DWI to DTI', IconLoader.ICON_FIBERS, [], @(h,ev)bst_call(@process_dwi2dti, 'ComputeInteractive', iSubject));
@@ -1292,7 +1299,8 @@ switch (lower(action))
                     if ~bst_get('ReadOnly') && ~isSepGain
                         AddSeparator(jPopup);
                     end
-                    gui_component('MenuItem', jPopup, [], 'Check source grid', IconLoader.ICON_HEADMODEL, [], @(h,ev)view_gridloc(filenameFull));
+                    gui_component('MenuItem', jPopup, [], 'Check source grid (Cortex)', IconLoader.ICON_HEADMODEL, [], @(h,ev)view_gridloc(filenameFull));
+                    gui_component('MenuItem', jPopup, [], 'Check source grid (MRI)', IconLoader.ICON_HEADMODEL, [], @(h,ev)view_gridloc(filenameFull, 'V', 'MRI'));
                 elseif strcmpi(sStudy.HeadModel(iHeadModel).HeadModelType, 'mixed')
                     if ~bst_get('ReadOnly') && ~isSepGain
                         AddSeparator(jPopup);
@@ -1448,12 +1456,15 @@ switch (lower(action))
                 else
                     % Display of multiple files
                     if ~isempty(AllMod)
-                        % === ERP IMAGE ===
+                        % === TIME SERIES / ERP IMAGE ===
+                        jMenuTs = gui_component('Menu', jPopup, [], 'Display time series', IconLoader.ICON_TS_DISPLAY, [], []);
                         jMenuErp = gui_component('Menu', jPopup, [], 'Display as image', IconLoader.ICON_NOISECOV, [], []);
                         % For each modality, display a menu
                         for iMod = 1:length(AllMod)
                             channelTypeDisplay = getChannelTypeDisplay(AllMod{iMod}, AllMod);
-                            gui_component('MenuItem', jMenuErp, [], channelTypeDisplay, IconLoader.ICON_NOISECOV, [], @(h,ev)view_erpimage(GetAllFilenames(bstNodes, 'data'), 'erpimage', AllMod{iMod}));
+                            DataFilenames = GetAllFilenames(bstNodes, 'data');
+                            gui_component('MenuItem', jMenuTs, [], channelTypeDisplay, IconLoader.ICON_TS_DISPLAY, [], @(h,ev)view_timeseries(DataFilenames, AllMod{iMod}, [], 'NewFigure'));
+                            gui_component('MenuItem', jMenuErp, [], channelTypeDisplay, IconLoader.ICON_NOISECOV, [], @(h,ev)view_erpimage(DataFilenames, 'erpimage', AllMod{iMod}));
                         end
                         % === 2DLAYOUT ===
                         mod2D = intersect(DisplayMod, {'EEG', 'MEG', 'MEG MAG', 'MEG GRAD', 'ECOG', 'SEEG', 'ECOG+SEEG', 'NIRS'});
@@ -2723,12 +2734,12 @@ function fcnPopupImportChannel(bstNodes, jMenu, isAddLoc)
         for iDir = 1:length(bstDefaults)
             jMenuDir = gui_component('Menu', jMenu, [], bstDefaults(iDir).name, IconLoader.ICON_FOLDER_CLOSE, [], []);
             % Create subfolder for cap manufacturer
-            jMenuOther = gui_component('Menu', jMenuDir, [], 'Generic', IconLoader.ICON_FOLDER_CLOSE, [], []);
-            jMenuAnt = gui_component('Menu', jMenuDir, [], 'ANT', IconLoader.ICON_FOLDER_CLOSE, [], []);
-            jMenuBs  = gui_component('Menu', jMenuDir, [], 'BioSemi', IconLoader.ICON_FOLDER_CLOSE, [], []);
-            jMenuBp  = gui_component('Menu', jMenuDir, [], 'BrainProducts', IconLoader.ICON_FOLDER_CLOSE, [], []);
-            jMenuEgi = gui_component('Menu', jMenuDir, [], 'EGI', IconLoader.ICON_FOLDER_CLOSE, [], []);
-            jMenuNs  = gui_component('Menu', jMenuDir, [], 'NeuroScan', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuOther = gui_component('Menu', [], [], 'Generic', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuAnt = gui_component('Menu', [], [], 'ANT', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuBs  = gui_component('Menu', [], [], 'BioSemi', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuBp  = gui_component('Menu', [], [], 'BrainProducts', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuEgi = gui_component('Menu', [], [], 'EGI', IconLoader.ICON_FOLDER_CLOSE, [], []);
+            jMenuNs  = gui_component('Menu', [], [], 'NeuroScan', IconLoader.ICON_FOLDER_CLOSE, [], []);
             % Add an item per Template available
             fList = bstDefaults(iDir).contents;
             for iFile = 1:length(fList)
@@ -2756,6 +2767,25 @@ function fcnPopupImportChannel(bstNodes, jMenu, isAddLoc)
                 end
                 % Create item
                 gui_component('MenuItem', jMenuType, [], fList(iFile).name, IconLoader.ICON_CHANNEL, [], fcnCallback);
+            end
+            % Add if not empty
+            if (jMenuOther.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuOther);
+            end
+            if (jMenuAnt.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuAnt);
+            end
+            if (jMenuBs.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuBs);
+            end
+            if (jMenuBp.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuBp);
+            end
+            if (jMenuEgi.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuEgi);
+            end
+            if (jMenuNs.getMenuComponentCount() > 0)
+                jMenuDir.add(jMenuNs);
             end
         end
     end

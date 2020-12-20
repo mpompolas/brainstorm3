@@ -36,7 +36,7 @@ function [BstMriFile, sMri] = import_mri(iSubject, MriFile, FileFormat, isIntera
 %
 % Authors: Francois Tadel, 2008-2020
 
-% ===== Parse inputs =====
+%% ===== PARSE INPUTS =====
 if (nargin < 3) || isempty(FileFormat)
     FileFormat = 'ALL';
 end
@@ -62,7 +62,6 @@ if (iSubject == 0)
 else
     sSubject = ProtocolSubjects.Subject(iSubject);
 end
-
 
 %% ===== SELECT MRI FILE =====
 % If MRI file to load was not defined : open a dialog box to select it
@@ -98,7 +97,6 @@ if isempty(MriFile)
     bst_set('DefaultFormats',  DefaultFormats);
 end
 
-
 %% ===== DICOM CONVERTER =====
 if strcmpi(FileFormat, 'DICOM-SPM')
     % Convert DICOM to NII
@@ -109,7 +107,6 @@ if strcmpi(FileFormat, 'DICOM-SPM')
     end
     FileFormat = 'Nifti1';
 end
-
 
 %% ===== LOOP ON MULTIPLE MRI =====
 if iscell(MriFile) && (length(MriFile) == 1)
@@ -130,10 +127,18 @@ elseif iscell(MriFile)
     % All the files are imported: exit
     return;
 end
-    
-    
+
 %% ===== LOAD MRI FILE =====
-bst_progress('start', 'Import MRI', ['Loading file "' MriFile '"...']);
+isProgress = bst_progress('isVisible');
+if ~isProgress
+    bst_progress('start', 'Import MRI', ['Loading file "' MriFile '"...']);
+end
+% MNI / Atlas?
+isMni = ismember(FileFormat, {'ALL-MNI', 'ALL-MNI-ATLAS'});
+isAtlas = strcmp(FileFormat, 'ALL-MNI-ATLAS');
+if isMni
+    isInteractive = 0;
+end
 % Load MRI
 isNormalize = 0;
 sMri = in_mri(MriFile, FileFormat, isInteractive, isNormalize);
@@ -143,6 +148,18 @@ if isempty(sMri)
 end
 % History: File name
 sMri = bst_history('add', sMri, 'import', ['Import from: ' MriFile]);
+
+%% ===== GET ATLAS LABELS =====
+% Try to get associated labels
+[Labels, AtlasName] = mri_getlabels(MriFile, sMri);
+% Save labels in the file structure
+if ~isempty(Labels)
+    sMri.Labels = Labels;
+    tagAtlas = '_volatlas';
+    isAtlas = 1;
+else
+    tagAtlas = '';
+end
 
 
 %% ===== MANAGE MULTIPLE MRI =====
@@ -183,20 +200,24 @@ if (iAnatomy > 1) && (isInteractive || isAutoAdjust)
     refSize = size(sMriRef.Cube(:,:,:,1));
     newSize = size(sMri.Cube(:,:,:,1));
     isSameSize = all(refSize == newSize) && all(sMriRef.Voxsize(1:3) == sMri.Voxsize(1:3));
-    % Initialize list of options to register this new MRI with the existing one
-    strOptions = '<HTML>How to register the new volume with the reference image?<BR>';
-    cellOptions = {};
-    % Register with the SPM
-    strOptions = [strOptions, '<BR>- <U><B>SPM</B></U>:&nbsp;&nbsp;&nbsp;Coregister the two volumes with SPM (requires SPM toolbox).'];
-    cellOptions{end+1} = 'SPM';
-    % Register with the MNI transformation
-    strOptions = [strOptions, '<BR>- <U><B>MNI</B></U>:&nbsp;&nbsp;&nbsp;Compute the MNI transformation for both volumes (inaccurate).'];
-    cellOptions{end+1} = 'MNI';
-    % Skip registration
-    strOptions = [strOptions, '<BR>- <U><B>Ignore</B></U>:&nbsp;&nbsp;&nbsp;The two volumes are already registered.'];
-    cellOptions{end+1} = 'Ignore';
+    % If importing explicitly a MNI volume / MNI atlas
+    if isMni
+        RegMethod = 'MNI';
     % Ask what operation to perform with this MRI
-    if isInteractive
+    elseif isInteractive
+        % Initialize list of options to register this new MRI with the existing one
+        strOptions = '<HTML>How to register the new volume with the reference image?<BR>';
+        cellOptions = {};
+        % Register with the SPM
+        strOptions = [strOptions, '<BR>- <U><B>SPM</B></U>:&nbsp;&nbsp;&nbsp;Coregister the two volumes with SPM (requires SPM toolbox).'];
+        cellOptions{end+1} = 'SPM';
+        % Register with the MNI transformation
+        strOptions = [strOptions, '<BR>- <U><B>MNI</B></U>:&nbsp;&nbsp;&nbsp;Compute the MNI transformation for both volumes (inaccurate).'];
+        cellOptions{end+1} = 'MNI';
+        % Skip registration
+        strOptions = [strOptions, '<BR>- <U><B>Ignore</B></U>:&nbsp;&nbsp;&nbsp;The two volumes are already registered.'];
+        cellOptions{end+1} = 'Ignore';
+        % Ask user to make a choice
         RegMethod = java_dialog('question', [strOptions '<BR><BR></HTML>'], 'Import MRI', [], cellOptions, 'Reg+reslice');
     % In non-interactive mode: ignore if possible, or use the first option available
     else
@@ -210,7 +231,9 @@ if (iAnatomy > 1) && (isInteractive || isAutoAdjust)
     end
     
     % === ASK RESLICE ===
-    if isInteractive && (~strcmpi(RegMethod, 'Ignore') || ...
+    if isMni
+        isReslice = 1;
+    elseif isInteractive && (~strcmpi(RegMethod, 'Ignore') || ...
         (isfield(sMriRef, 'InitTransf') && ~isempty(sMriRef.InitTransf) && any(ismember(sMriRef.InitTransf(:,1), 'vox2ras')) && ...
          isfield(sMri,    'InitTransf') && ~isempty(sMri.InitTransf)    && any(ismember(sMri.InitTransf(:,1),    'vox2ras')) && ...
          ~isResliceDisabled))
@@ -235,17 +258,17 @@ if (iAnatomy > 1) && (isInteractive || isAutoAdjust)
     switch (RegMethod)
         case 'MNI'
             % Register the new MRI on the existing one using the MNI transformation (+ RESLICE)
-            [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'mni', isReslice);
+            [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'mni', isReslice, isAtlas);
         case 'SPM'
             % Register the new MRI on the existing one using SPM + RESLICE
-            [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'spm', isReslice);
+            [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'spm', isReslice, isAtlas);
         case 'Ignore'
             if isReslice
                 % Register the new MRI on the existing one using the transformation in the input files (files already registered)
-                [sMri, errMsg, fileTag] = mri_reslice(sMri, sMriRef, 'vox2ras', 'vox2ras');
+                [sMri, errMsg, fileTag] = mri_reslice(sMri, sMriRef, 'vox2ras', 'vox2ras', isAtlas);
             else
                 % Just copy the fiducials from the reference MRI
-                [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'vox2ras', isReslice);
+                [sMri, errMsg, fileTag] = mri_coregister(sMri, sMriRef, 'vox2ras', isReslice, isAtlas);
                 % Transform error in warning
                 if ~isempty(errMsg) && ~isempty(sMri) && isSameSize && ~isReslice
                     disp(['BST> Warning: ' errMsg]);
@@ -267,6 +290,7 @@ if (iAnatomy > 1) && (isInteractive || isAutoAdjust)
     end
 end
 
+
 %% ===== SAVE MRI IN BRAINSTORM FORMAT =====
 % Add a Comment field in MRI structure, if it does not exist yet
 if ~isempty(Comment)
@@ -280,10 +304,14 @@ else
     if (iAnatomy > 1) || isInteractive || ~isAutoAdjust
         [fPath, fBase, fExt] = bst_fileparts(MriFile);
         fBase = strrep(fBase, '.nii', '');
-        sMri.Comment = file_unique([fBase, fileTag], {sSubject.Anatomy.Comment});
+        if isMni
+            sMri.Comment = file_unique(fBase, {sSubject.Anatomy.Comment});
+        else
+            sMri.Comment = file_unique([fBase, fileTag], {sSubject.Anatomy.Comment});
+        end
     end
     % Add MNI tag
-    if strcmpi(FileFormat, 'ALL-MNI')
+    if isMni
         sMri.Comment = [sMri.Comment ' (MNI)'];
     end
     % Get imported base name
@@ -292,20 +320,19 @@ else
     importedBaseName = strrep(importedBaseName, '_subjectimage', '');
     importedBaseName = strrep(importedBaseName, '.nii', '');
 end
-% Add MNI tag
-if strcmpi(FileFormat, 'ALL-MNI')
-    sMri.Comment = [sMri.Comment ' (MNI)'];
-end
+
+
+%% ===== SAVE FILE =====
 % Get subject subdirectory
 subjectSubDir = bst_fileparts(sSubject.FileName);
 % Produce a default anatomy filename
-BstMriFile = bst_fullfile(ProtocolInfo.SUBJECTS, subjectSubDir, ['subjectimage_' importedBaseName fileTag '.mat']);
+BstMriFile = bst_fullfile(ProtocolInfo.SUBJECTS, subjectSubDir, ['subjectimage_' importedBaseName fileTag tagAtlas '.mat']);
 % Make this filename unique
 BstMriFile = file_unique(BstMriFile);
 % Save new MRI in Brainstorm format
 sMri = out_mri_bst(sMri, BstMriFile);
 
-%% ===== STORE NEW MRI IN DATABASE ======
+%% ===== REFERENCE NEW MRI IN DATABASE ======
 % New anatomy structure
 sSubject.Anatomy(iAnatomy) = db_template('Anatomy');
 sSubject.Anatomy(iAnatomy).FileName = file_short(BstMriFile);
@@ -314,8 +341,6 @@ sSubject.Anatomy(iAnatomy).Comment  = sMri.Comment;
 if isempty(sSubject.iAnatomy)
     sSubject.iAnatomy = iAnatomy;
 end
-
-% === Update database ===
 % Default subject
 if (iSubject == 0)
 	ProtocolSubjects.DefaultSubject = sSubject;
@@ -324,12 +349,10 @@ else
     ProtocolSubjects.Subject(iSubject) = sSubject;
 end
 bst_set('ProtocolSubjects', ProtocolSubjects);
-
-% === Save first MRI as permanent default ===
+% Save first MRI as permanent default
 if (iAnatomy == 1)
     db_surface_default(iSubject, 'Anatomy', iAnatomy, 0);
 end
-
 
 %% ===== UPDATE GUI =====
 % Refresh tree
@@ -349,20 +372,10 @@ if isInteractive
         hFig = view_mri(BstMriFile, 'EditMri');
         drawnow;
         bst_progress('stop');
-%         % Display help message: ask user to select fiducial points
-%         if (iAnatomy == 1)
-%             jHelp = bst_help('MriSetup.html', 0);
-%         else
-%             jHelp = [];
-%         end
         % Wait for the MRI Viewer to be closed
         if ishandle(hFig)
             waitfor(hFig);
         end
-%         % Close help window
-%         if ~isempty(jHelp)
-%             jHelp.close();
-%         end
     % Other volumes: Display registration
     else
         % If volumes are registered
@@ -376,7 +389,9 @@ if isInteractive
         end
     end
 else
-    bst_progress('stop');
+    if ~isProgress
+        bst_progress('stop');
+    end
 end
 
 

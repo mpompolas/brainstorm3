@@ -47,27 +47,26 @@ isEeg  = strcmpi(cfg.EEGMethod, 'duneuro')  && ~isempty(cfg.iEeg);
 isMeg  = strcmpi(cfg.MEGMethod, 'duneuro')  && ~isempty(cfg.iMeg);
 isEcog = strcmpi(cfg.ECOGMethod, 'duneuro') && ~isempty(cfg.iEcog);
 isSeeg = strcmpi(cfg.SEEGMethod, 'duneuro') && ~isempty(cfg.iSeeg);
-% Error: cannot combine modalities other than MEG+EEG
-if (nnz([isEeg, isMeg, isEcog, isSeeg]) > 2) || ((nnz([isEeg, isMeg, isEcog, isSeeg]) == 2) && (isEcog || isSeeg))
-    errMsg = 'DUNEuro cannot combine modalities other than MEG+EEG.';
+
+% Get the modality
+if ((isEeg || isEcog || isSeeg) && isMeg)
+    dnModality = 'meeg';  
+elseif (isEeg || isEcog || isSeeg)
+    dnModality = 'eeg';
+elseif  isMeg
+    dnModality = 'meg'; % from DUNEuro side, EEG, sEEG, ECOG  uses the same process
+else
+    errMsg = 'No valid modality available.';
     return;
 end
-% Get the modality
-if isEeg && isMeg
-    dnModality = 'meeg';
-elseif isEeg
-    dnModality = 'eeg';
-elseif isMeg
-    dnModality = 'meg';
-elseif isEcog
-    dnModality = 'ecog';
-elseif isSeeg
-    dnModality = 'seeg';
-end
+
 % Get EEG positions
-if isEeg
+% Combined modalities for EEG/sEEG/EcoG as EEG
+if (isEeg || isEcog || isSeeg)
+    cfg.iEeg = [cfg.iEeg, cfg.iSeeg, cfg.iEcog];
     EegLoc = cat(2, cfg.Channel(cfg.iEeg).Loc);
 end
+
 % Get MEG positions/orientations
 if isMeg
     MegChannels = [];
@@ -77,8 +76,27 @@ if isMeg
             MegChannels = [MegChannels; iChan, sChan.Loc(:,iInteg)', sChan.Orient(:,iInteg)', sChan.Weight(iInteg)];
         end
     end
+    % In the case where the MEG integration points are used
+    if cfg.UseIntegrationPoint == 0
+        % loop over the integration Points
+        % chan_loc = figure_3d('GetChannelPositions', cfg, cfg.iMeg); % <= this function is not sufficient, we need also the weights. 
+        MegChannelsTemp = [];
+        for iChan = 1 : length(cfg.iMeg)
+            group = MegChannels(MegChannels(:,1) == iChan,:);
+            groupPositive = group(group(:,end)>0,:);
+            groupNegative = group(group(:,end)<0,:);
+            if ~isempty(groupPositive)
+                equivalentPositionPostive = sum(repmat(abs(groupPositive(:,end)),[1 3])  .* groupPositive(:,2:4));
+                MegChannelsTemp = [MegChannelsTemp; iChan  equivalentPositionPostive groupPositive(1,5:7)  sum(groupPositive(:,end))];
+            end
+            if ~isempty(groupNegative)
+                equivalentPositionNegative = sum(repmat(abs(groupNegative(:,end)),[1 3])  .* groupNegative(:,2:4));
+                MegChannelsTemp = [MegChannelsTemp; iChan  equivalentPositionNegative groupNegative(1,5:7)  sum(groupNegative(:,end))];
+            end 
+        end
+        MegChannels = MegChannelsTemp;
+    end
 end
-
 
 %% ===== HEAD MODEL =====
 % Load FEM mesh
@@ -156,7 +174,6 @@ end
 MeshFile = fullfile(TmpDir, MeshFile);
 out_fem(FemMat, MeshFile);
 
-
 %% ====== SOURCE SPACE =====
 % Source space type
 switch (cfg.HeadModelType)
@@ -233,14 +250,50 @@ switch (cfg.HeadModelType)
                 
                 % OPTION #2: Gradually move the vertex towards the center of the centroid, until it is located inside the element
                 % Move the vertex towards the center until it is inside the element
-                nFix = 10;
-                for iFix = 1:nFix
-                    tmpVert = (nFix - iFix)/nFix * cfg.GridLoc(iVertOut(i),:) + iFix/nFix * ElemCenter(iTarget,:);
-                    if inpolyhedron(targetFaces, gmVert, tmpVert)
-                        distMove = sqrt(sum((cfg.GridLoc(iVertOut(i),:) - tmpVert) .^ 2)) * 1000;
-                        disp(sprintf('DUNEURO> Dipole #%d moved inside the GM (%1.2fmm)', iVertOut(i), distMove));
-                        cfg.GridLoc(iVertOut(i),:) = tmpVert;
-                        break;
+                %nFix = 10;
+                %for iFix = 1:nFix
+                %    tmpVert = (nFix - iFix)/nFix * cfg.GridLoc(iVertOut(i),:) + iFix/nFix * ElemCenter(iTarget,:);
+                %   if inpolyhedron(targetFaces, gmVert, tmpVert)
+                %        distMove = sqrt(sum((cfg.GridLoc(iVertOut(i),:) - tmpVert) .^ 2)) * 1000;
+                %        disp(sprintf('DUNEURO> Dipole #%d moved inside the GM (%1.2fmm)', iVertOut(i), distMove));
+                %        cfg.GridLoc(iVertOut(i),:) = tmpVert;
+                %        break;
+                %    end
+                %end
+                
+                % OPTION #3: move the vertex towards the centroid of the element, and then place the final dipole 
+                % in the symetric point to the center, as the image of the computed vertex
+                % x-----o-----x'
+                % ^      ^      ^____ : x' the image of x, or the final dipole position 
+                % |       |_________ : o is the center of the elem, and middle of [x,x']
+                % |_____________ : the point inside the element determined by the tmpVert in the following equation                
+                nFix = 10; % divid into 10 segments
+                iFix = 7; % ratio of the distance tmpVert from the centroid
+                tmpVert = (nFix - iFix)/nFix * cfg.GridLoc(iVertOut(i),:) + iFix/nFix * ElemCenter(iTarget,:);
+                distPoint = ElemCenter(iTarget,:) - tmpVert;
+                newPoint = ElemCenter(iTarget,:) + (distPoint);
+                distMove = sqrt(sum((cfg.GridLoc(iVertOut(i),:) - newPoint) .^ 2)) * 1000;
+                % use the image/symeric point if it's inside GM
+                if inpolyhedron(targetFaces, gmVert, newPoint) 
+                    disp(sprintf('DUNEURO> iDipole %d/%d : Dipole #%d moved inside the GM (%1.2fmm) (option 3 :as image)',i,length(iVertOut), iVertOut(i), distMove));
+                    cfg.GridLoc(iVertOut(i),:) = newPoint;
+                elseif inpolyhedron(targetFaces, gmVert, tmpVert) % use the original point if it's inside GM
+                    disp(sprintf('DUNEURO> iDipole %d/%d : Warning Dipole #%d moved outside the GM (%1.2fmm) (option 3 :as image)', i,length(iVertOut),iVertOut(i), distMove));
+                    % use the original distance unstead of the image
+                    distMove = sqrt(sum((cfg.GridLoc(iVertOut(i),:) - tmpVert) .^ 2)) * 1000;
+                    disp(sprintf('DUNEURO> iDipole %d/%d : Correction 1: Dipole #%d moved inside the GM (%1.2fmm) (option 3: not image)', i,length(iVertOut),iVertOut(i), distMove));
+                    cfg.GridLoc(iVertOut(i),:) = tmpVert;               
+                else % Use the option 2 defined by Francois
+                    disp(sprintf('DUNEURO> iDipole %d/%d : Warning Dipole #%d moved outside the GM (%1.2fmm) (option 3 :as image)', i,length(iVertOut),iVertOut(i), distMove));
+                    nFix = 20; % with 10 it's not working for some extrem case, then I upgrade it to 20
+                    for iFix = 1: nFix
+                       tmpVert = (nFix - iFix)/nFix * cfg.GridLoc(iVertOut(i),:) + iFix/nFix * ElemCenter(iTarget,:);
+                      if inpolyhedron(targetFaces, gmVert, tmpVert)
+                           distMove = sqrt(sum((cfg.GridLoc(iVertOut(i),:) - tmpVert) .^ 2)) * 1000;
+                           disp(sprintf('DUNEURO> iDipole %d/%d : Correction 2: Dipole #%d moved inside the GM (%1.2fmm) (option2)', i,length(iVertOut),iVertOut(i), distMove));
+                           cfg.GridLoc(iVertOut(i),:) = tmpVert;
+                           break;
+                       end
                     end
                 end
             end
@@ -319,7 +372,7 @@ fclose(fid);
 %% ===== SENSOR MODEL =====
 % Write the EEG electrode file
 ElecFile = 'electrode_model.txt';
-if isEeg
+if isEeg || isEcog || isSeeg 
     fid = fopen(fullfile(TmpDir, ElecFile), 'wt+');
     fprintf(fid, '%d %d %d  \n', EegLoc);
     fclose(fid); 
@@ -379,16 +432,23 @@ fprintf(fid, 'solver_type = %s\n', cfg.SolverType);
 fprintf(fid, 'geometry_adapted = %s\n', bool2str(cfg.GeometryAdapted));
 fprintf(fid, 'tolerance = %d\n', cfg.Tolerance);
 % [electrodes]
+if isEcog || isSeeg 
+    % Instead of selecting the electrode on the outer surface,
+    % uses the nearest FEM node as the electrode location
+    cfg.ElecType = 'closest_subentity_center';
+end
 if strcmp(dnModality, 'eeg') || strcmp(dnModality, 'meeg')
     fprintf(fid, '[electrodes]\n');
     fprintf(fid, 'filename = %s\n', fullfile(TmpDir, ElecFile));
     fprintf(fid, 'type = %s\n', cfg.ElecType);
+    fprintf(fid, 'codims = %s\n', '3');
 end
 % [meg]
 if strcmp(dnModality, 'meg') || strcmp(dnModality, 'meeg')
     fprintf(fid, '[meg]\n');
     fprintf(fid, 'intorderadd = %d\n', cfg.MegIntorderadd);
     fprintf(fid, 'type = %s\n', cfg.MegType);
+    fprintf(fid, 'cache.enable = %s\n',bool2str(cfg.EnableCacheMemory) );
     % [coils]
     fprintf(fid, '[coils]\n');
     fprintf(fid, 'filename = %s\n', CoilFile);
@@ -463,10 +523,8 @@ bst_progress('text', 'DUNEuro: Computing leadfield...');
 disp(['DUNEURO> System call: ' callStr]);
 tic;
 % Call DUNEuro
-[status,cmdout] = system(callStr);
+status = system(callStr)
 if (status ~= 0)
-    disp('DUNEURO> Error log:');
-    disp(cmdout);
     errMsg = 'Error during the DUNEuro computation, see logs in the command window.';
     return;
 end
@@ -476,10 +534,11 @@ disp(['DUNEURO> FEM computation completed in: ' num2str(toc) 's']);
 %% ===== READ LEADFIELD ======
 bst_progress('text', 'DUNEuro: Reading leadfield...');
 % EEG
-if isEeg
+if (isEeg || isEcog || isSeeg) 
     GainEeg = in_duneuro_bin(fullfile(TmpDir, cfg.BstEegLfFile))';
 end
-% MEG
+
+%MEG
 if isMeg
     GainMeg = in_duneuro_bin(fullfile(TmpDir, cfg.BstMegLfFile))';
     
@@ -514,7 +573,7 @@ if isMeg
     nbChannel = length(channelIndex);
     weighted_B = zeros(nbChannel,size(Bfull,2));
     for iCh = 1 : nbChannel
-        communChannel = find(iCh==MegChannels);
+        communChannel = find(iCh==MegChannels(:,1));
         BcommunChannel = Bfull(communChannel(:),:);
         WcommunChannel =  MegChannels(communChannel(:), 8: end);
         weighted_B(iCh,:) = sum (BcommunChannel.*WcommunChannel,1);
@@ -527,15 +586,12 @@ Gain = NaN * zeros(length(cfg.Channel), 3 * length(cfg.GridLoc));
 if isMeg
     Gain(cfg.iMeg,:) = GainMeg; 
 end 
-if isEeg
+if (isEeg || isEcog || isSeeg) 
     Gain(cfg.iEeg,:) = GainEeg; 
 end
 
-
 %% ===== SAVE TRANSFER MATRIX ======
 disp('DUNEURO> TODO: Save transferOut.dat to database.')
-
-
 
 end
 

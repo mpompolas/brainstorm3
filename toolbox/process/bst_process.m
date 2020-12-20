@@ -433,6 +433,10 @@ function OutputFile = ProcessFilter(sProcess, sInput)
     else
         TFmask = [];
     end
+    % Get TF options
+    if isfield(sMat, 'Options') && ~isempty(sMat.Options)
+        sInput.Options = sMat.Options;
+    end
     
     % Progress bar comment
     txtProgress = ['Running process: ' sProcess.Comment '...'];
@@ -473,9 +477,9 @@ function OutputFile = ProcessFilter(sProcess, sInput)
         end
         % ERROR: Cannot process channel/channel uncompensated CTF files
         if ismember(1,sProcess.processDim) && ~isReadAll && ismember(sFileIn.format, {'CTF','CTF-CONTINUOUS'}) && ...
-                (sFileIn.prop.currCtfComp ~= 3) && (isempty(AllSensorTypes) || any(ismember(AllSensorTypes, {'MEG','MEG REF','MEG GRAD','MEG MAG'})))
+                (sFileIn.prop.currCtfComp ~= sFileIn.prop.destCtfComp) && (isempty(AllSensorTypes) || any(ismember(AllSensorTypes, {'MEG','MEG REF','MEG GRAD','MEG MAG'})))
             bst_report('Error', sProcess, sInput, [...
-                'This CTF file was not saved with the 3rd order compensation.' 10 ...
+                'This CTF file was not saved with the desired compensation order (', num2str(sFileIn.prop.destCtfComp), ').' 10 ...
                 'To process this file, you have the following options: ' 10 ...
                 '  1) Check the option "Process the entire file at once", only if the entire file fits in memory.' 10 ...
                 '  2) Run the process "Artifacts > Apply SSP & CTF compensation" first to save a compensated file.']);
@@ -967,6 +971,10 @@ function OutputFile = ProcessFilter(sProcess, sInput)
     % TFmask
     if isfield(sMat, 'TFmask')
         sMat.TFmask = OutputTFmask;
+    end
+    % TF options
+    if isfield(sMat, 'Options') && isfield(sInput, 'Options') && ~isempty(sInput.Options)
+        sMat.Options = sInput.Options;
     end
     % Comment: forced in the options
     if isfield(sProcess.options, 'Comment') && isfield(sProcess.options.Comment, 'Value') && ~isempty(sProcess.options.Comment.Value)

@@ -1,4 +1,4 @@
-function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, MriFileRef, Method, isReslice)
+function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, MriFileRef, Method, isReslice, isAtlas)
 % MRI_COREGISTER: Compute the MNI transformation on both input volumes, then register the first on the second.
 %
 % USAGE:  [MriFileReg, errMsg, fileTag] = mri_coregister(MriFileSrc, MriFileRef, Method, isReslice)
@@ -11,6 +11,7 @@ function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, Mri
 %    - sMriRef    : Brainstorm MRI structure used as a reference
 %    - Method     : Method used for the coregistration of the volume: 'spm', 'mni', 'vox2ras'
 %    - isReslice  : If 1, reslice the output volume to match dimensions of the reference volume
+%    - isAtlas    : If 1, perform only integer/nearest neighbors interpolations (MNI and VOX2RAS registration only)
 %
 % OUTPUTS:
 %    - MriFileReg : Relative path to the new Brainstorm MRI file (containing the structure sMriReg)
@@ -39,6 +40,10 @@ function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, Mri
 % Authors: Francois Tadel, 2016-2020
 
 % ===== LOAD INPUTS =====
+% Parse inputs
+if (nargin < 5) || isempty(isAtlas)
+    isAtlas = 0;
+end
 % Initialize returned variables
 MriFileReg = [];
 errMsg = [];
@@ -67,11 +72,11 @@ elseif ischar(MriFileSrc)
 else
     error('Invalid call.');
 end
-% Not available for multiple volumes
-if (size(sMriRef.Cube, 4) > 1) || (size(sMriSrc.Cube, 4) > 1)
-    errMsg = 'The input files cannot contain multiple volumes.';
-    return;
-end
+% % Not available for multiple volumes
+% if (size(sMriRef.Cube, 4) > 1) || (size(sMriSrc.Cube, 4) > 1)
+%     errMsg = 'The input files cannot contain multiple volumes.';
+%     return;
+% end
 % Inialize various variables
 isUpdateScs = 0;
 isUpdateNcs = 0;
@@ -189,7 +194,7 @@ switch lower(Method)
         % === RESLICE VOLUME ===
         if isReslice
             % Reslice the volume
-            [sMriReg, errMsg] = mri_reslice(sMriSrc, sMriRef, TransfSrc, TransfRef);
+            [sMriReg, errMsg] = mri_reslice(sMriSrc, sMriRef, TransfSrc, TransfRef, isAtlas);
         else
             % Save the original input volume
             sMriReg = sMriSrc;
@@ -205,18 +210,19 @@ switch lower(Method)
         % Nothing to do, just reslice if needed
         if isReslice
             % Reslice the volume
-            [sMriReg, errMsg] = mri_reslice(sMriSrc, sMriRef, 'vox2ras', 'vox2ras');
+            [sMriReg, errMsg] = mri_reslice(sMriSrc, sMriRef, 'vox2ras', 'vox2ras', isAtlas);
+            % Output file tag
+            if ~isempty(strfind(sMriSrc.Comment, '_spm'))
+                fileTag = '';
+            else
+                fileTag = '_vox2ras';
+            end
         else
             % Save the original input volume
             sMriReg = sMriSrc;
             isUpdateScs = 1;
             isUpdateNcs = 1;
-        end
-        % Output file tag
-        if ~isempty(strfind(sMriSrc.Comment, '_spm'))
             fileTag = '';
-        else
-            fileTag = '_vox2ras';
         end
 end
 % Handle errors
