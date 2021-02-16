@@ -148,6 +148,9 @@ function [optionFile, skipLines, skipValidate] = GetSpikeSorterOptionFile(spikeS
             
         case 'kilosort'
             optionFile = bst_fullfile(bst_get('BrainstormUserDir'), 'kilosort', 'KilosortStandardConfig.m');
+        
+        case 'ivadomed'
+            optionFile = bst_fullfile(bst_get('BrainstormUserDir'), 'ivadomed', 'ivadomed', 'config', 'config.json');
 
         otherwise
             error('The chosen spike sorter is currently unsupported by Brainstorm.');
